@@ -11793,13 +11793,13 @@ kmip_decode_encrypt_response_payload(KMIP *ctx, EncryptResponsePayload *value)
     
     /* Allocate memory for mandatory fields */
     value->unique_identifier = ctx->calloc_func(ctx->state, 1, sizeof(TextString));
-    value->data = ctx->calloc_func(ctx->state, 1, sizeof(ByteString));
     
     /* Optional fields start as NULL */
+    value->data = NULL;
     value->iv_counter_nonce = NULL;
+    value->correlation_value = NULL;
     value->authenticated_encryption_tag = NULL;
-    
-
+ 
     /* Track position */
     uint8 *value_index = ctx->index;
     
@@ -11816,17 +11816,32 @@ kmip_decode_encrypt_response_payload(KMIP *ctx, EncryptResponsePayload *value)
                 break;
                 
             case KMIP_TAG_DATA:
+                /* Allocate on demand for optional data field */
+                if(value->data == NULL)
+                {
+                    value->data = ctx->calloc_func(ctx->state, 1, sizeof(ByteString));
+                }
                 result = kmip_decode_byte_string(ctx, KMIP_TAG_DATA, value->data);
                 CHECK_RESULT(ctx, result);
                 break;
                 
             case KMIP_TAG_IV_COUNTER_NONCE:
-                /* Allocate on demand for optional fields */
+                /* Allocate on demand for optional field */
                 if(value->iv_counter_nonce == NULL)
                 {
                     value->iv_counter_nonce = ctx->calloc_func(ctx->state, 1, sizeof(ByteString));
                 }
                 result = kmip_decode_byte_string(ctx, KMIP_TAG_IV_COUNTER_NONCE, value->iv_counter_nonce);
+                CHECK_RESULT(ctx, result);
+                break;
+
+            case KMIP_TAG_CORRELATION_VALUE:
+                /* Allocate on demand for optional correlation_value field */
+                if(value->correlation_value == NULL)
+                {
+                    value->correlation_value = ctx->calloc_func(ctx->state, 1, sizeof(TextString));
+                }
+                result = kmip_decode_text_string(ctx, KMIP_TAG_CORRELATION_VALUE, value->correlation_value);
                 CHECK_RESULT(ctx, result);
                 break;
                 
@@ -11877,8 +11892,11 @@ kmip_decode_decrypt_response_payload(KMIP *ctx, DecryptResponsePayload *value)
     
     /* Allocate memory for mandatory fields */
     value->unique_identifier = ctx->calloc_func(ctx->state, 1, sizeof(TextString));
-    value->data = ctx->calloc_func(ctx->state, 1, sizeof(ByteString));
     
+    /* Optional fields start as NULL */
+    value->data = NULL;
+    value->correlation_value = NULL;
+
     /* Track position */
     uint8 *value_index = ctx->index;
     
@@ -11895,10 +11913,25 @@ kmip_decode_decrypt_response_payload(KMIP *ctx, DecryptResponsePayload *value)
                 break;
                 
             case KMIP_TAG_DATA:
+                /* Allocate on demand for optional data field */
+                if(value->data == NULL)
+                {
+                    value->data = ctx->calloc_func(ctx->state, 1, sizeof(ByteString));
+                }
                 result = kmip_decode_byte_string(ctx, KMIP_TAG_DATA, value->data);
                 CHECK_RESULT(ctx, result);
                 break;
                 
+            case KMIP_TAG_CORRELATION_VALUE:
+                /* Allocate on demand for optional correlation_value field */
+                if(value->correlation_value == NULL)
+                {
+                    value->correlation_value = ctx->calloc_func(ctx->state, 1, sizeof(TextString));
+                }
+                result = kmip_decode_text_string(ctx, KMIP_TAG_CORRELATION_VALUE, value->correlation_value);
+                CHECK_RESULT(ctx, result);
+                break;
+
             default:
                 /* Skip unknown tags */
                 result = kmip_skip_tag(ctx);
