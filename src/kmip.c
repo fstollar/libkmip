@@ -3327,6 +3327,13 @@ kmip_free_encrypt_response_payload(KMIP *ctx, EncryptResponsePayload *value)
         ctx->free_func(ctx->state, value->iv_counter_nonce);
         value->iv_counter_nonce = NULL;
     }
+
+    if(value->correlation_value != NULL)
+    {
+        kmip_free_text_string(ctx, value->correlation_value);
+        ctx->free_func(ctx->state, value->correlation_value);
+        value->correlation_value = NULL;
+    }
     
     if(value->authenticated_encryption_tag != NULL)
     {
@@ -3354,6 +3361,13 @@ kmip_free_decrypt_response_payload(KMIP *ctx, DecryptResponsePayload *value)
         kmip_free_byte_string(ctx, value->data);
         ctx->free_func(ctx->state, value->data);
         value->data = NULL;
+    }
+
+    if(value->correlation_value != NULL)
+    {
+        kmip_free_text_string(ctx, value->correlation_value);
+        ctx->free_func(ctx->state, value->correlation_value);
+        value->correlation_value = NULL;
     }
 }
 
