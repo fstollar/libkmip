@@ -1602,6 +1602,38 @@ kmip_peek_tag(KMIP *ctx)
     return(tag);
 }
 
+/*
+ * Skips one TTLV entry
+*/
+uint32
+kmip_skip_tag(KMIP *ctx)
+{
+    if(BUFFER_BYTES_LEFT(ctx) < 7)
+    {
+        return(KMIP_FALSE);
+    }
+
+    uint32 length = 0;
+
+    /* skip TAG */
+    ctx->index += 4;
+            
+    /* read LENGTH and skip if possible */
+    length |= ((int32)*ctx->index++ << 24);
+    length |= ((int32)*ctx->index++ << 16);
+    length |= ((int32)*ctx->index++ << 8);
+    length |= ((int32)*ctx->index++ << 0);
+    length += CALCULATE_PADDING(length);
+            
+    if((ctx->size - (ctx->index - ctx->buffer)) >= length)
+    {
+        ctx->index += length;
+        return(KMIP_TRUE);
+    }
+
+    return(KMIP_FALSE);
+}
+
 int
 kmip_is_attribute_tag(uint32 value)
 {
@@ -11809,6 +11841,9 @@ kmip_decode_encrypt_response_payload(KMIP *ctx, EncryptResponsePayload *value)
                 
             default:
                 /* Skip unknown tags */
+                result = kmip_skip_tag(ctx);
+                CHECK_RESULT(ctx, result);
+                /* TODO: Should we extra handle unknown tags? */
                 break;
         }
     }
@@ -11866,6 +11901,9 @@ kmip_decode_decrypt_response_payload(KMIP *ctx, DecryptResponsePayload *value)
                 
             default:
                 /* Skip unknown tags */
+                result = kmip_skip_tag(ctx);
+                CHECK_RESULT(ctx, result);
+                /* TODO: Should we extra handle unknown tags? */
                 break;
         }
     }
