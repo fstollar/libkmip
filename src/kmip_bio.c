@@ -1967,9 +1967,16 @@ kmip_bio_decrypt_with_context(
     
     if(result != KMIP_OK)
     {
-        kmip_push_error_frame(ctx, __func__, __LINE__);
+        kmip_free_buffer(ctx, encoding, buffer_total_size);
+        kmip_free_buffer(ctx, response_buffer, response_size);
+        encoding = NULL;
+        response_buffer = NULL;
+        kmip_set_buffer(ctx, NULL, 0);
         return(result);
     }
+
+    kmip_free_buffer(ctx, encoding, buffer_total_size);
+    encoding = NULL;
     
     /* Step 4: Decode response */
     kmip_set_buffer(ctx, response_buffer, response_size);
@@ -2011,8 +2018,7 @@ kmip_bio_decrypt_with_context(
     }
     
     /* Step 6: Extract plaintext from response */
-    DecryptResponsePayload *decrypt_response = 
-        (DecryptResponsePayload *)response_item.response_payload;
+    DecryptResponsePayload *decrypt_response = (DecryptResponsePayload *)response_item.response_payload;
     
     if(decrypt_response == NULL || decrypt_response->data == NULL)
     {
@@ -2048,8 +2054,8 @@ kmip_bio_decrypt_with_context(
 int
 kmip_bio_encrypt(
     BIO *bio,
-    char *key_id,
-    int key_id_size,
+    char *key_uuid,
+    int key_uuid_size,
     uint8 *plaintext,
     int plaintext_size,
     CryptographicParameters *params,
@@ -2066,8 +2072,8 @@ kmip_bio_encrypt(
     int result = kmip_bio_encrypt_with_context(
         &ctx,
         bio,
-        key_id,
-        key_id_size,
+        key_uuid,
+        key_uuid_size,
         plaintext,
         plaintext_size,
         params,
@@ -2085,8 +2091,8 @@ kmip_bio_encrypt(
 int
 kmip_bio_decrypt(
     BIO *bio,
-    char *key_id,
-    int key_id_size,
+    char *key_uuid,
+    int key_uuid_size,
     uint8 *ciphertext,
     int ciphertext_size,
     uint8 *iv,
@@ -2103,8 +2109,8 @@ kmip_bio_decrypt(
     int result = kmip_bio_decrypt_with_context(
         &ctx,
         bio,
-        key_id,
-        key_id_size,
+        key_uuid,
+        key_uuid_size,
         ciphertext,
         ciphertext_size,
         iv,
