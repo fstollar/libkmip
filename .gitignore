@@ -6,4 +6,5 @@ bin/demo_create
 bin/demo_destroy
 bin/demo_query
 bin/demo_get
+bin/demo_encrypt
 bin/tests
