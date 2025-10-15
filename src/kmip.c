@@ -8470,6 +8470,14 @@ kmip_encode_request_batch_item(KMIP *ctx, const RequestBatchItem *value)
         result = kmip_encode_query_request_payload(ctx, (QueryRequestPayload*)value->request_payload);
         break;
 
+        case KMIP_OP_ENCRYPT:
+        result = kmip_encode_encrypt_request_payload(ctx, (EncryptRequestPayload*)value->request_payload);
+        break;
+
+        case KMIP_OP_DECRYPT:
+        result = kmip_encode_decrypt_request_payload(ctx, (DecryptRequestPayload*)value->request_payload);
+        break;
+
         default:
         kmip_push_error_frame(ctx, __func__, __LINE__);
         return(KMIP_NOT_IMPLEMENTED);
