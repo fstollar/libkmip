@@ -8553,7 +8553,7 @@ kmip_encode_response_batch_item(KMIP *ctx, const ResponseBatchItem *value)
         case KMIP_OP_QUERY:
         result = kmip_encode_query_response_payload(ctx, (QueryResponsePayload*)value->response_payload);
         break;
-
+/*
         case KMIP_OP_ENCRYPT:
         result = kmip_encode_encrypt_response_payload(ctx, (EncryptResponsePayload*)value->response_payload);
         break;
@@ -8561,7 +8561,7 @@ kmip_encode_response_batch_item(KMIP *ctx, const ResponseBatchItem *value)
         case KMIP_OP_DECRYPT:
         result = kmip_encode_decrypt_response_payload(ctx, (DecryptResponsePayload*)value->response_payload);
         break;
-
+*/
         default:
         kmip_push_error_frame(ctx, __func__, __LINE__);
         return(KMIP_NOT_IMPLEMENTED);

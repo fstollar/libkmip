@@ -1776,7 +1776,9 @@ int kmip_encode_query_functions(KMIP *ctx, const Functions*);
 int kmip_encode_query_request_payload(KMIP *, const QueryRequestPayload *);
 int kmip_encode_query_response_payload(KMIP *, const QueryResponsePayload *);
 int kmip_encode_encrypt_request_payload(KMIP *ctx, const EncryptRequestPayload *value);
+//int kmip_encode_encrypt_response_payload(KMIP *ctx, const EncryptRequestPayload *value);
 int kmip_encode_decrypt_request_payload(KMIP *ctx, const DecryptRequestPayload *value);
+//int kmip_encode_decrypt_response_payload(KMIP *ctx, const DecryptRequestPayload *value);
 
 
 /*
