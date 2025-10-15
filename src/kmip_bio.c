@@ -1409,8 +1409,7 @@ int kmip_bio_send_request_encoding(KMIP *ctx, BIO *bio,
     size_t buffer_block_size = 8;
     size_t buffer_total_size = buffer_blocks * buffer_block_size;
     
-    uint8 *encoding = ctx->calloc_func(ctx->state, buffer_blocks,
-                                       buffer_block_size);
+    uint8 *encoding = ctx->calloc_func(ctx->state, buffer_blocks, buffer_block_size);
     if(encoding == NULL)
     {
         return(KMIP_MEMORY_ALLOC_FAILED);
@@ -1439,8 +1438,7 @@ int kmip_bio_send_request_encoding(KMIP *ctx, BIO *bio,
     }
     
     kmip_set_buffer(ctx, NULL, 0);
-    uint8 *extended = ctx->realloc_func(ctx->state, encoding,
-                                        buffer_total_size + length);
+    uint8 *extended = ctx->realloc_func(ctx->state, encoding, buffer_total_size + length);
     if(encoding != extended)
     {
         encoding = extended;
@@ -1688,8 +1686,8 @@ kmip_bio_encrypt_with_context(
     encrypt_payload.data = &data;
     encrypt_payload.iv_counter_nonce = NULL; /* TODO how to implement this? */
     encrypt_payload.correlation_value = NULL; /* TODO how to implement this? */
-    encrypt_payload.init_indicator = KMIP_FALSE; /* TODO how to implement this? */
-    encrypt_payload.final_indicator = KMIP_FALSE; /* TODO how to implement this? */
+    encrypt_payload.init_indicator = KMIP_UNSET; /* TODO how to implement this? */
+    encrypt_payload.final_indicator = KMIP_UNSET; /* TODO how to implement this? */
     encrypt_payload.authenticated_encryption_additional_data = NULL; /* TODO how to implement this? */
 
     // Set crypto parameters
@@ -1993,16 +1991,16 @@ kmip_bio_decrypt_with_context(
     
     /* Step 5: Check operation status */
     ResponseBatchItem response_item = response_message.batch_items[0];
-    enum result_status result_status = response_item.result_status;
+    enum result_status resultstatus = response_item.result_status;
     
-    if(result_status != KMIP_STATUS_SUCCESS)
+    if(resultstatus != KMIP_STATUS_SUCCESS)
     {
         kmip_push_error_frame(ctx, __func__, __LINE__);
         ctx->free_func(ctx->state, response_buffer);
         kmip_free_response_message(ctx, &response_message);
 /*        
         // Return specific error based on status 
-        switch(result_status)
+        switch(resultstatus)
         {
             case KMIP_STATUS_OPERATION_FAILED:
                 return(KMIP_ERROR_OPERATION_FAILED);
@@ -2014,7 +2012,7 @@ kmip_bio_decrypt_with_context(
                 return(KMIP_ERROR_OPERATION_FAILED);
         }
 */
-        return(result_status);
+        return(resultstatus);
     }
     
     /* Step 6: Extract plaintext from response */
@@ -2066,7 +2064,7 @@ kmip_bio_encrypt(
 {
     /* Create and initialize context */
     KMIP ctx = {0};
-    kmip_init(&ctx, NULL, 0, KMIP_1_0);
+    kmip_init(&ctx, NULL, 0, KMIP_1_2);
     
     /* Call mid-level function */
     int result = kmip_bio_encrypt_with_context(
@@ -2103,7 +2101,7 @@ kmip_bio_decrypt(
 {
     /* Create and initialize context */
     KMIP ctx = {0};
-    kmip_init(&ctx, NULL, 0, KMIP_1_0);
+    kmip_init(&ctx, NULL, 0, KMIP_1_2);
     
     /* Call mid-level function */
     int result = kmip_bio_decrypt_with_context(
