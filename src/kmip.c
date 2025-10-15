@@ -8554,6 +8554,14 @@ kmip_encode_response_batch_item(KMIP *ctx, const ResponseBatchItem *value)
         result = kmip_encode_query_response_payload(ctx, (QueryResponsePayload*)value->response_payload);
         break;
 
+        case KMIP_OP_ENCRYPT:
+        result = kmip_encode_encrypt_response_payload(ctx, (EncryptResponsePayload*)value->response_payload);
+        break;
+
+        case KMIP_OP_DECRYPT:
+        result = kmip_encode_decrypt_response_payload(ctx, (DecryptResponsePayload*)value->response_payload);
+        break;
+
         default:
         kmip_push_error_frame(ctx, __func__, __LINE__);
         return(KMIP_NOT_IMPLEMENTED);
@@ -8778,7 +8786,8 @@ kmip_encode_encrypt_request_payload(KMIP *ctx, const EncryptRequestPayload *valu
     /* Calculate and write the length */
     uint8 *curr_index = ctx->index;
     ctx->index = length_index;
-    kmip_encode_int32_be(ctx, curr_index - value_index);
+    result = kmip_encode_length(ctx, curr_index - value_index);
+    CHECK_RESULT(ctx, result);
     ctx->index = curr_index;
     
     return(KMIP_OK);
@@ -8873,7 +8882,8 @@ kmip_encode_decrypt_request_payload(KMIP *ctx, const DecryptRequestPayload *valu
     /* Calculate and write the length */
     uint8 *curr_index = ctx->index;
     ctx->index = length_index;
-    kmip_encode_int32_be(ctx, curr_index - value_index);
+    result = kmip_encode_length(ctx, curr_index - value_index);
+    CHECK_RESULT(ctx, result);
     ctx->index = curr_index;
     
     return(KMIP_OK);
@@ -10934,6 +10944,18 @@ kmip_decode_response_batch_item(KMIP *ctx, ResponseBatchItem *value)
             value->response_payload = ctx->calloc_func(ctx->state, 1, sizeof(QueryResponsePayload));
             CHECK_NEW_MEMORY(ctx, value->response_payload, sizeof(QueryResponsePayload), "QueryResponsePayload structure");
             result = kmip_decode_query_response_payload(ctx, value->response_payload);
+            break;
+
+            case KMIP_OP_ENCRYPT:
+            value->response_payload = ctx->calloc_func(ctx->state, 1, sizeof(EncryptResponsePayload));
+            CHECK_NEW_MEMORY(ctx, value->response_payload, sizeof(EncryptResponsePayload), "EncryptResponsePayload structure");
+            result = kmip_decode_encrypt_response_payload(ctx, value->response_payload);
+            break;
+
+            case KMIP_OP_DECRYPT:
+            value->response_payload = ctx->calloc_func(ctx->state, 1, sizeof(DecryptResponsePayload));
+            CHECK_NEW_MEMORY(ctx, value->response_payload, sizeof(DecryptResponsePayload), "DecryptResponsePayload structure");
+            result = kmip_decode_decrypt_response_payload(ctx, value->response_payload);
             break;
 
             default:
