@@ -894,6 +894,16 @@ kmip_check_enum_value(enum kmip_version version, enum tag t, int value)
             case KMIP_OP_QUERY:
             return(KMIP_OK);
             break;
+
+            /* KMIP 1.2 */
+            case KMIP_OP_ENCRYPT:
+            case KMIP_OP_DECRYPT:
+            case KMIP_OP_RNG_RETRIEVE:
+            if(version >= KMIP_1_2)
+                    return(KMIP_OK);
+                else
+                    return(KMIP_INVALID_FOR_VERSION);
+            break;
             
             default:
             return(KMIP_ENUM_MISMATCH);
@@ -1258,9 +1268,6 @@ kmip_init(KMIP *ctx, void *buffer, size_t buffer_size, enum kmip_version v)
         return;
     }
     
-    ctx->buffer = (uint8 *)buffer;
-    ctx->index = ctx->buffer;
-    ctx->size = buffer_size;
     ctx->version = v;
     
     if(ctx->calloc_func == NULL)
@@ -1285,12 +1292,19 @@ kmip_init(KMIP *ctx, void *buffer, size_t buffer_size, enum kmip_version v)
     ctx->max_message_size = 8192;
     ctx->error_message_size = 200;
     ctx->error_message = NULL;
-    
     ctx->error_frame_count = 20;
+
+    ctx->buffer = NULL;
+    ctx->index = ctx->buffer;
+    ctx->size = 0;
+    kmip_set_buffer(ctx, buffer, buffer_size);
     
     ctx->credential_list = ctx->calloc_func(ctx->state, 1, sizeof(LinkedList));
     
     kmip_clear_errors(ctx);
+    kmip_init_error_message(ctx);
+
+    // TODO: what to do with ctx->state here?
 }
 
 void
@@ -1301,7 +1315,7 @@ kmip_init_error_message(KMIP *ctx)
         return;
     }
     
-    if(ctx->error_message == NULL)
+    if(ctx->error_message == NULL && ctx->error_message_size > 0)
     {
         ctx->error_message = ctx->calloc_func(ctx->state, ctx->error_message_size, sizeof(char));
     }
@@ -1359,6 +1373,7 @@ kmip_reset(KMIP *ctx)
     ctx->index = ctx->buffer;
     
     kmip_clear_errors(ctx);
+    kmip_init_error_message(ctx);
 }
 
 void
@@ -1372,6 +1387,7 @@ kmip_rewind(KMIP *ctx)
     ctx->index = ctx->buffer;
     
     kmip_clear_errors(ctx);
+    kmip_init_error_message(ctx);
 }
 
 void
@@ -1381,7 +1397,19 @@ kmip_set_buffer(KMIP *ctx, void *buffer, size_t buffer_size)
     {
         return;
     }
+
+    /* TODO (fst): Should we not free the old buffer if present? Example:*/
     
+    if(ctx->buffer != NULL)
+    {
+        kmip_memset(ctx->buffer, 0, ctx->size);
+        ctx->free_func(ctx->state, ctx->buffer);
+        ctx->buffer = NULL;
+        ctx->index = ctx->buffer;
+        ctx->size = 0;
+    }
+ 
+
     /* TODO (ph) Add own_buffer if buffer == NULL? */
     ctx->buffer = (uint8 *)buffer;
     ctx->index = ctx->buffer;
@@ -1396,8 +1424,11 @@ kmip_destroy(KMIP *ctx)
         return;
     }
     
-    kmip_reset(ctx);
+//    kmip_reset(ctx);
     kmip_set_buffer(ctx, NULL, 0);
+
+    /* TODO: Should we free error_message? Is probably not clean without */
+    kmip_clear_errors(ctx);
 
     kmip_remove_credentials(ctx);
     ctx->memset_func(ctx->credential_list, 0, sizeof(LinkedList));
@@ -1489,7 +1520,7 @@ kmip_is_tag_next(const KMIP *ctx, enum tag t)
     
     uint8 *index = ctx->index;
     
-    if((ctx->size - (uint64)(index - ctx->buffer)) < 3)
+    if(BUFFER_BYTES_LEFT(ctx) < 3)
     {
         return(KMIP_FALSE);
     }
@@ -1518,7 +1549,7 @@ kmip_is_tag_type_next(const KMIP *ctx, enum tag t, enum type s)
     
     uint8 *index = ctx->index;
     
-    if((ctx->size - (uint64)(index - ctx->buffer)) < 4)
+    if(BUFFER_BYTES_LEFT(ctx) < 4)
     {
         return(KMIP_FALSE);
     }
@@ -1551,7 +1582,7 @@ kmip_get_num_items_next(KMIP *ctx, enum tag t)
     uint8 *index = ctx->index;
     uint32 length = 0;
     
-    while((ctx->size - (uint64)(ctx->index - ctx->buffer)) > 8)
+    while(BUFFER_BYTES_LEFT(ctx) > 8)
     {
         if(kmip_is_tag_next(ctx, t))
         {
@@ -1564,7 +1595,7 @@ kmip_get_num_items_next(KMIP *ctx, enum tag t)
             length |= ((int32)*ctx->index++ << 0);
             length += CALCULATE_PADDING(length);
             
-            if((ctx->size - (ctx->index - ctx->buffer)) >= length)
+            if(BUFFER_BYTES_LEFT(ctx) >= length)
             {
                 ctx->index += length;
                 count++;
@@ -1595,9 +1626,9 @@ kmip_peek_tag(KMIP *ctx)
     uint8 *index = ctx->index;
     uint32 tag = 0;
 
-    tag |= ((int32)*index++ << 16);
-    tag |= ((int32)*index++ << 8);
-    tag |= ((int32)*index   << 0);
+    tag |= ((uint32)*index++ << 16);
+    tag |= ((uint32)*index++ << 8);
+    tag |= ((uint32)*index   << 0);
 
     return(tag);
 }
@@ -1605,17 +1636,18 @@ kmip_peek_tag(KMIP *ctx)
 /*
  * Skips one TTLV entry
 */
-uint32
+int
 kmip_skip_tag(KMIP *ctx)
 {
-    if(BUFFER_BYTES_LEFT(ctx) < 7)
+    if(BUFFER_BYTES_LEFT(ctx) < 8)
     {
         return(KMIP_FALSE);
     }
 
+    uint8 *index = ctx->index;
     uint32 length = 0;
 
-    /* skip TAG */
+    /* skip TAG & TYPE */
     ctx->index += 4;
             
     /* read LENGTH and skip if possible */
@@ -1625,11 +1657,14 @@ kmip_skip_tag(KMIP *ctx)
     length |= ((int32)*ctx->index++ << 0);
     length += CALCULATE_PADDING(length);
             
-    if((ctx->size - (ctx->index - ctx->buffer)) >= length)
+    if(BUFFER_BYTES_LEFT(ctx) >= length)
     {
         ctx->index += length;
         return(KMIP_TRUE);
     }
+
+    // could not skip: rewind index
+    ctx->index = index;
 
     return(KMIP_FALSE);
 }
@@ -1863,9 +1898,15 @@ kmip_free_buffer(KMIP *ctx, void *buffer, size_t size)
     {
         return;
     }
-    
-    ctx->memset_func(buffer, 0, size);
-    ctx->free_func(ctx->state, buffer);
+
+    if(buffer != NULL)
+    {
+        if(size > 0)
+        {
+            ctx->memset_func(buffer, 0, size);
+        }
+        ctx->free_func(ctx->state, buffer);
+    }
 }
 
 void
@@ -2027,6 +2068,7 @@ kmip_free_attribute(KMIP *ctx, Attribute *value)
                 /*      pointed to within value->value.                          */
                 /*                                                               */
                 /*      Avoid hitting this case at all costs.                    */
+                kmip_push_error_frame(ctx, __func__, __LINE__);
                 break;
             };
             
@@ -2148,6 +2190,7 @@ kmip_free_key_material(KMIP *ctx, enum key_format_type format, void **value)
                 /*      possible substructures pointed to within value.   */
                 /*                                                        */
                 /*      Avoid hitting this case at all costs.             */
+                kmip_push_error_frame(ctx, __func__, __LINE__);
                 break;
             };
             
@@ -2564,6 +2607,7 @@ kmip_free_get_response_payload(KMIP *ctx, GetResponsePayload *value)
                 /*      pointed to within value->object.                */
                 /*                                                      */
                 /*      Avoid hitting this case at all costs.           */
+                kmip_push_error_frame(ctx, __func__, __LINE__);
                 break;
             };
             
@@ -2641,6 +2685,14 @@ kmip_free_request_batch_item(KMIP *ctx, RequestBatchItem *value)
                 kmip_free_query_request_payload(ctx, (QueryRequestPayload *)value->request_payload);
                 break;
 
+                case KMIP_OP_ENCRYPT:
+                kmip_free_encrypt_request_payload(ctx, (EncryptRequestPayload *)value->request_payload);
+                break;
+
+                case KMIP_OP_DECRYPT:
+                kmip_free_decrypt_request_payload(ctx, (DecryptRequestPayload *)value->request_payload);
+                break;
+
                 default:
                 /* NOTE (ph) Hitting this case means that we don't know    */
                 /*      what the actual type, size, or value of            */
@@ -2650,6 +2702,7 @@ kmip_free_request_batch_item(KMIP *ctx, RequestBatchItem *value)
                 /*      pointed to within value->request_payload.          */
                 /*                                                         */
                 /*      Avoid hitting this case at all costs.              */
+                kmip_push_error_frame(ctx, __func__, __LINE__);
                 break;
             };
             
@@ -2710,6 +2763,15 @@ kmip_free_response_batch_item(KMIP *ctx, ResponseBatchItem *value)
                 kmip_free_query_response_payload(ctx, (QueryResponsePayload *)value->response_payload);
                 break;
 
+                case KMIP_OP_ENCRYPT:
+//                kmip_free_encrypt_response_payload(ctx, (EncryptResponsePayload *)value->response_payload);
+                break;
+
+                case KMIP_OP_DECRYPT:
+//                kmip_free_decrypt_response_payload(ctx, (DecryptResponsePayload *)value->response_payload);
+                break;
+
+
                 default:
                 /* NOTE (ph) Hitting this case means that we don't know    */
                 /*      what the actual type, size, or value of            */
@@ -2719,6 +2781,7 @@ kmip_free_response_batch_item(KMIP *ctx, ResponseBatchItem *value)
                 /*      pointed to within value->response_payload.         */
                 /*                                                         */
                 /*      Avoid hitting this case at all costs.              */
+                kmip_push_error_frame(ctx, __func__, __LINE__);
                 break;
             };
             
@@ -2892,6 +2955,7 @@ kmip_free_credential_value(KMIP *ctx, enum credential_type type, void **value)
                 /*      possible substructures pointed to within value.   */
                 /*                                                        */
                 /*      Avoid hitting this case at all costs.             */
+                kmip_push_error_frame(ctx, __func__, __LINE__);
                 break;
             };
         
@@ -3053,6 +3117,11 @@ kmip_free_response_header(KMIP *ctx, ResponseHeader *value)
 void
 kmip_free_request_message(KMIP *ctx, RequestMessage *value)
 {
+    if(ctx == NULL || value == NULL)
+    {
+        return;
+    }
+
     if(value != NULL)
     {
         if(value->request_header != NULL)
@@ -3081,6 +3150,11 @@ kmip_free_request_message(KMIP *ctx, RequestMessage *value)
 void
 kmip_free_response_message(KMIP *ctx, ResponseMessage *value)
 {
+    if(ctx == NULL || value == NULL)
+    {
+        return;
+    }
+
     if(value != NULL)
     {
         if(value->response_header != NULL)
@@ -3109,22 +3183,25 @@ kmip_free_response_message(KMIP *ctx, ResponseMessage *value)
 void
 kmip_free_query_functions(KMIP *ctx, Functions* value)
 {
-    if (value != NULL)
+    if(ctx == NULL || value == NULL)
     {
-        if (value->function_list != NULL)
-        {
-            LinkedListItem *curr = kmip_linked_list_pop(value->function_list);
-            while(curr != NULL)
-            {
-                ctx->free_func(ctx->state, curr->data);
-                curr->data = NULL;
-                ctx->free_func(ctx->state, curr);
-                curr = kmip_linked_list_pop(value->function_list);
-            }
-            ctx->free_func(ctx->state, value->function_list);
-            value->function_list = NULL;
-        }
+        return;
     }
+
+    if (value->function_list != NULL)
+    {
+        LinkedListItem *curr = kmip_linked_list_pop(value->function_list);
+        while(curr != NULL)
+        {
+            ctx->free_func(ctx->state, curr->data);
+            curr->data = NULL;
+            ctx->free_func(ctx->state, curr);
+            curr = kmip_linked_list_pop(value->function_list);
+        }
+        ctx->free_func(ctx->state, value->function_list);
+        value->function_list = NULL;
+    }
+
 
     return;
 }
@@ -3132,6 +3209,11 @@ kmip_free_query_functions(KMIP *ctx, Functions* value)
 void
 kmip_free_query_response_payload(KMIP *ctx, QueryResponsePayload *value)
 {
+    if(ctx == NULL || value == NULL)
+    {
+        return;
+    }
+
     if (value->operations)
     {
         kmip_free_operations(ctx, value->operations);
@@ -3180,6 +3262,10 @@ kmip_free_query_request_payload(KMIP *ctx, QueryRequestPayload *value)
 void
 kmip_free_operations(KMIP *ctx, Operations *value)
 {
+    if(ctx == NULL || value == NULL)
+    {
+        return;
+    }
 
     if(value != NULL)
     {
@@ -3204,6 +3290,11 @@ kmip_free_operations(KMIP *ctx, Operations *value)
 void
 kmip_free_objects(KMIP *ctx, ObjectTypes* value)
 {
+    if(ctx == NULL || value == NULL)
+    {
+        return;
+    }
+
     if(value != NULL)
     {
         if(value->object_list != NULL)
@@ -3227,8 +3318,10 @@ kmip_free_objects(KMIP *ctx, ObjectTypes* value)
 void
 kmip_free_encrypt_request_payload(KMIP *ctx, EncryptRequestPayload *value)
 {
-    if(value == NULL)
+    if(ctx == NULL || value == NULL)
+    {
         return;
+    }
     
     if(value->unique_identifier != NULL)
     {
@@ -3278,8 +3371,10 @@ kmip_free_encrypt_request_payload(KMIP *ctx, EncryptRequestPayload *value)
 void
 kmip_free_decrypt_request_payload(KMIP *ctx, DecryptRequestPayload *value)
 {
-    if(value == NULL)
+    if(ctx == NULL || value == NULL)
+    {
         return;
+    }
     
     if(value->unique_identifier != NULL)
     {
@@ -3336,8 +3431,10 @@ kmip_free_decrypt_request_payload(KMIP *ctx, DecryptRequestPayload *value)
 void
 kmip_free_encrypt_response_payload(KMIP *ctx, EncryptResponsePayload *value)
 {
-    if(value == NULL)
+    if(ctx == NULL || value == NULL)
+    {
         return;
+    }
     
     if(value->unique_identifier != NULL)
     {
@@ -3378,8 +3475,10 @@ kmip_free_encrypt_response_payload(KMIP *ctx, EncryptResponsePayload *value)
 void
 kmip_free_decrypt_response_payload(KMIP *ctx, DecryptResponsePayload *value)
 {
-    if(value == NULL)
+    if(ctx == NULL || value == NULL)
+    {
         return;
+    }
     
     if(value->unique_identifier != NULL)
     {
@@ -3408,6 +3507,11 @@ kmip_free_decrypt_response_payload(KMIP *ctx, DecryptResponsePayload *value)
 void
 kmip_free_server_information(KMIP* ctx, ServerInformation* value)
 {
+    if(ctx == NULL || value == NULL)
+    {
+        return;
+    }
+
     kmip_free_text_string(ctx, value->server_name);
     kmip_free_text_string(ctx, value->server_serial_number);
     kmip_free_text_string(ctx, value->server_version);
@@ -5227,6 +5331,8 @@ kmip_compare_request_batch_item(const RequestBatchItem *a, const RequestBatchIte
                     return(KMIP_FALSE);
                 }
                 break;
+
+                // TODO (fst): Add encrypt and decrypt compare
                 
                 default:
                 /* NOTE (ph) Unsupported payloads cannot be compared. */
@@ -5339,6 +5445,8 @@ kmip_compare_response_batch_item(const ResponseBatchItem *a, const ResponseBatch
                     return(KMIP_FALSE);
                 }
                 break;
+
+                // TODO (fst): Add encrypt and decrypt compare
 
                 default:
                 /* NOTE (ph) Unsupported payloads cannot be compared. */
@@ -6461,6 +6569,11 @@ kmip_encode_enum(KMIP *ctx, enum tag t, int32 value)
 int
 kmip_encode_bool(KMIP *ctx, enum tag t, bool32 value)
 {
+    if((value != KMIP_TRUE) && (value != KMIP_FALSE))
+    {
+        return(KMIP_ARG_INVALID);
+    }
+
     CHECK_BUFFER_FULL(ctx, 16);
     
     kmip_encode_int32_be(ctx, TAG_TYPE(t, KMIP_TYPE_BOOLEAN));
@@ -6474,7 +6587,12 @@ kmip_encode_bool(KMIP *ctx, enum tag t, bool32 value)
 int
 kmip_encode_text_string(KMIP *ctx, enum tag t, const TextString *value)
 {
-    /* TODO (ph) What if value is NULL? */
+    // (fst) if TextString is NULL, we don't encode it
+    if(value == NULL)
+    {
+        return(KMIP_OK);
+    }
+
     uint8 padding = CALCULATE_PADDING(value->size);
     CHECK_BUFFER_FULL(ctx, 8 + value->size + padding);
     
@@ -6496,6 +6614,12 @@ kmip_encode_text_string(KMIP *ctx, enum tag t, const TextString *value)
 int
 kmip_encode_byte_string(KMIP *ctx, enum tag t, const ByteString *value)
 {
+    // (fst) if ByteString is NULL, we don't encode it
+    if(value == NULL)
+    {
+        return(KMIP_OK);
+    }
+
     uint8 padding = CALCULATE_PADDING(value->size);
     CHECK_BUFFER_FULL(ctx, 8 + value->size + padding);
     
@@ -8710,6 +8834,8 @@ kmip_encode_query_response_payload(KMIP *ctx, const QueryResponsePayload *value)
 int
 kmip_encode_encrypt_request_payload(KMIP *ctx, const EncryptRequestPayload *value)
 {
+    CHECK_KMIP_VERSION(ctx, KMIP_1_2);
+
     int result = 0;
     
     /* Write the request payload tag and type */
@@ -8802,6 +8928,8 @@ kmip_encode_encrypt_request_payload(KMIP *ctx, const EncryptRequestPayload *valu
 int
 kmip_encode_decrypt_request_payload(KMIP *ctx, const DecryptRequestPayload *value)
 {
+    CHECK_KMIP_VERSION(ctx, KMIP_1_2);
+
     int result = 0;
     
     result = kmip_encode_int32_be(ctx, TAG_TYPE(KMIP_TAG_REQUEST_PAYLOAD, KMIP_TYPE_STRUCTURE));
@@ -8896,6 +9024,7 @@ Decoding Functions
 int
 kmip_decode_int8_be(KMIP *ctx, void *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, sizeof(int8));
     
     int8 *i = (int8*)value;
@@ -8909,6 +9038,7 @@ kmip_decode_int8_be(KMIP *ctx, void *value)
 int
 kmip_decode_int32_be(KMIP *ctx, void *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, sizeof(int32));
     
     int32 *i = (int32*)value;
@@ -8925,6 +9055,7 @@ kmip_decode_int32_be(KMIP *ctx, void *value)
 int
 kmip_decode_int64_be(KMIP *ctx, void *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, sizeof(int64));
     
     int64 *i = (int64*)value;
@@ -8945,6 +9076,7 @@ kmip_decode_int64_be(KMIP *ctx, void *value)
 int
 kmip_decode_length(KMIP *ctx, uint32 *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 4);
 
     kmip_decode_int32_be(ctx, value);
@@ -8960,6 +9092,7 @@ kmip_decode_length(KMIP *ctx, uint32 *value)
 int
 kmip_decode_integer(KMIP *ctx, enum tag t, int32 *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 16);
     
     int32 tag_type = 0;
@@ -8983,6 +9116,7 @@ kmip_decode_integer(KMIP *ctx, enum tag t, int32 *value)
 int
 kmip_decode_long(KMIP *ctx, enum tag t, int64 *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 16);
     
     int32 tag_type = 0;
@@ -9002,6 +9136,7 @@ kmip_decode_long(KMIP *ctx, enum tag t, int64 *value)
 int
 kmip_decode_enum(KMIP *ctx, enum tag t, void *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 16);
     
     int32 tag_type = 0;
@@ -9026,6 +9161,7 @@ kmip_decode_enum(KMIP *ctx, enum tag t, void *value)
 int
 kmip_decode_bool(KMIP *ctx, enum tag t, bool32 *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 16);
     
     int32 tag_type = 0;
@@ -9050,6 +9186,7 @@ kmip_decode_bool(KMIP *ctx, enum tag t, bool32 *value)
 int
 kmip_decode_text_string(KMIP *ctx, enum tag t, TextString *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int32 tag_type = 0;
@@ -9085,6 +9222,7 @@ kmip_decode_text_string(KMIP *ctx, enum tag t, TextString *value)
 int
 kmip_decode_byte_string(KMIP *ctx, enum tag t, ByteString *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int32 tag_type = 0;
@@ -9120,6 +9258,7 @@ kmip_decode_byte_string(KMIP *ctx, enum tag t, ByteString *value)
 int
 kmip_decode_date_time(KMIP *ctx, enum tag t, int64 *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 16);
     
     int32 tag_type = 0;
@@ -9139,6 +9278,7 @@ kmip_decode_date_time(KMIP *ctx, enum tag t, int64 *value)
 int
 kmip_decode_interval(KMIP *ctx, enum tag t, uint32 *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 16);
     
     int32 tag_type = 0;
@@ -9162,6 +9302,7 @@ kmip_decode_interval(KMIP *ctx, enum tag t, uint32 *value)
 int
 kmip_decode_name(KMIP *ctx, Name *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -9189,6 +9330,8 @@ kmip_decode_name(KMIP *ctx, Name *value)
 int
 kmip_decode_attribute_name(KMIP *ctx, enum attribute_type *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
+
     int result = 0;
     enum tag t = KMIP_TAG_ATTRIBUTE_NAME;
     TextString n = {0};
@@ -9785,6 +9928,7 @@ kmip_decode_attributes(KMIP *ctx, Attributes *value)
 int
 kmip_decode_template_attribute(KMIP *ctx, TemplateAttribute *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -9829,6 +9973,7 @@ kmip_decode_template_attribute(KMIP *ctx, TemplateAttribute *value)
 int
 kmip_decode_protocol_version(KMIP *ctx, ProtocolVersion *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 40);
     
     int result = 0;
@@ -9853,6 +9998,7 @@ kmip_decode_protocol_version(KMIP *ctx, ProtocolVersion *value)
 int
 kmip_decode_transparent_symmetric_key(KMIP *ctx, TransparentSymmetricKey *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -9877,6 +10023,7 @@ kmip_decode_transparent_symmetric_key(KMIP *ctx, TransparentSymmetricKey *value)
 int
 kmip_decode_key_material(KMIP *ctx, enum key_format_type format, void **value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     int result = 0;
     
     switch(format)
@@ -9933,6 +10080,7 @@ kmip_decode_key_material(KMIP *ctx, enum key_format_type format, void **value)
 int
 kmip_decode_key_value(KMIP *ctx, enum key_format_type format, KeyValue *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -9967,6 +10115,7 @@ kmip_decode_key_value(KMIP *ctx, enum key_format_type format, KeyValue *value)
 int
 kmip_decode_application_specific_information(KMIP *ctx, ApplicationSpecificInformation *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
 
     kmip_init_application_specific_information(value);
@@ -10020,6 +10169,7 @@ kmip_decode_application_specific_information(KMIP *ctx, ApplicationSpecificInfor
 int
 kmip_decode_cryptographic_parameters(KMIP *ctx, CryptographicParameters *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     kmip_init_cryptographic_parameters(value);
@@ -10165,6 +10315,7 @@ kmip_decode_cryptographic_parameters(KMIP *ctx, CryptographicParameters *value)
 int
 kmip_decode_encryption_key_information(KMIP *ctx, EncryptionKeyInformation *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -10198,6 +10349,7 @@ kmip_decode_encryption_key_information(KMIP *ctx, EncryptionKeyInformation *valu
 int
 kmip_decode_mac_signature_key_information(KMIP *ctx, MACSignatureKeyInformation *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -10232,6 +10384,7 @@ kmip_decode_mac_signature_key_information(KMIP *ctx, MACSignatureKeyInformation 
 int
 kmip_decode_key_wrapping_data(KMIP *ctx, KeyWrappingData *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -10300,6 +10453,7 @@ kmip_decode_key_wrapping_data(KMIP *ctx, KeyWrappingData *value)
 int
 kmip_decode_key_block(KMIP *ctx, KeyBlock *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -10369,6 +10523,7 @@ kmip_decode_key_block(KMIP *ctx, KeyBlock *value)
 int
 kmip_decode_symmetric_key(KMIP *ctx, SymmetricKey *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -10393,6 +10548,7 @@ kmip_decode_symmetric_key(KMIP *ctx, SymmetricKey *value)
 int
 kmip_decode_public_key(KMIP *ctx, PublicKey *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -10417,6 +10573,7 @@ kmip_decode_public_key(KMIP *ctx, PublicKey *value)
 int
 kmip_decode_private_key(KMIP *ctx, PrivateKey *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -10441,6 +10598,7 @@ kmip_decode_private_key(KMIP *ctx, PrivateKey *value)
 int
 kmip_decode_key_wrapping_specification(KMIP *ctx, KeyWrappingSpecification *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -10622,6 +10780,7 @@ kmip_decode_create_response_payload(KMIP *ctx, CreateResponsePayload *value)
 int
 kmip_decode_get_request_payload(KMIP *ctx, GetRequestPayload *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -10680,6 +10839,7 @@ kmip_decode_get_request_payload(KMIP *ctx, GetRequestPayload *value)
 int
 kmip_decode_get_response_payload(KMIP *ctx, GetResponsePayload *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -10737,6 +10897,7 @@ kmip_decode_get_response_payload(KMIP *ctx, GetResponsePayload *value)
 int
 kmip_decode_destroy_request_payload(KMIP *ctx, DestroyRequestPayload *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -10763,6 +10924,7 @@ kmip_decode_destroy_request_payload(KMIP *ctx, DestroyRequestPayload *value)
 int
 kmip_decode_destroy_response_payload(KMIP *ctx, DestroyResponsePayload *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -10847,6 +11009,20 @@ kmip_decode_request_batch_item(KMIP *ctx, RequestBatchItem *value)
         result = kmip_decode_query_request_payload(ctx, (QueryRequestPayload*)value->request_payload);
         break;
 
+/*        
+        case KMIP_OP_ENCRYPT:
+        value->request_payload = ctx->calloc_func(ctx->state, 1, sizeof(EncryptRequestPayload));
+        CHECK_NEW_MEMORY(ctx, value->request_payload, sizeof(EncryptRequestPayload), "EncryptRequestPayload structure");
+        result = kmip_decode_encrypt_request_payload(ctx, (EncryptRequestPayload*)value->request_payload);
+        break;
+
+        case KMIP_OP_DECRYPT:
+        value->request_payload = ctx->calloc_func(ctx->state, 1, sizeof(DecryptRequestPayload));
+        CHECK_NEW_MEMORY(ctx, value->request_payload, sizeof(DecryptRequestPayload), "DecryptRequestPayload structure");
+        result = kmip_decode_decrypt_request_payload(ctx, (DecryptRequestPayload*)value->request_payload);
+        break;
+*/        
+
         default:
         kmip_push_error_frame(ctx, __func__, __LINE__);
         return(KMIP_NOT_IMPLEMENTED);
@@ -10860,6 +11036,7 @@ kmip_decode_request_batch_item(KMIP *ctx, RequestBatchItem *value)
 int
 kmip_decode_response_batch_item(KMIP *ctx, ResponseBatchItem *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -10972,6 +11149,7 @@ kmip_decode_response_batch_item(KMIP *ctx, ResponseBatchItem *value)
 int
 kmip_decode_nonce(KMIP *ctx, Nonce *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -11002,6 +11180,7 @@ kmip_decode_nonce(KMIP *ctx, Nonce *value)
 int
 kmip_decode_username_password_credential(KMIP *ctx, UsernamePasswordCredential *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -11035,6 +11214,7 @@ kmip_decode_username_password_credential(KMIP *ctx, UsernamePasswordCredential *
 int
 kmip_decode_device_credential(KMIP *ctx, DeviceCredential *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -11107,6 +11287,7 @@ kmip_decode_device_credential(KMIP *ctx, DeviceCredential *value)
 int
 kmip_decode_attestation_credential(KMIP *ctx, AttestationCredential *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -11153,6 +11334,7 @@ kmip_decode_attestation_credential(KMIP *ctx, AttestationCredential *value)
 int
 kmip_decode_credential_value(KMIP *ctx, enum credential_type type, void **value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     int result = 0;
     
     switch(type)
@@ -11188,6 +11370,7 @@ kmip_decode_credential_value(KMIP *ctx, enum credential_type type, void **value)
 int
 kmip_decode_credential(KMIP *ctx, Credential *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -11213,6 +11396,7 @@ kmip_decode_credential(KMIP *ctx, Credential *value)
 int
 kmip_decode_authentication(KMIP *ctx, Authentication *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -11237,6 +11421,7 @@ kmip_decode_authentication(KMIP *ctx, Authentication *value)
 int
 kmip_decode_request_header(KMIP *ctx, RequestHeader *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -11348,6 +11533,7 @@ kmip_decode_request_header(KMIP *ctx, RequestHeader *value)
 int
 kmip_decode_response_header(KMIP *ctx, ResponseHeader *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -11437,6 +11623,7 @@ kmip_decode_response_header(KMIP *ctx, ResponseHeader *value)
 int
 kmip_decode_request_message(KMIP *ctx, RequestMessage *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -11475,6 +11662,7 @@ kmip_decode_request_message(KMIP *ctx, RequestMessage *value)
 int
 kmip_decode_response_message(KMIP *ctx, ResponseMessage *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -11512,6 +11700,7 @@ kmip_decode_response_message(KMIP *ctx, ResponseMessage *value)
 int
 kmip_decode_query_functions(KMIP *ctx, Functions* value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     int result = 0;
     uint32 tag = kmip_peek_tag(ctx);
 
@@ -11570,6 +11759,7 @@ kmip_decode_query_request_payload(KMIP *ctx, QueryRequestPayload *value)
 int
 kmip_decode_operations(KMIP *ctx, Operations *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     int result = 0;
 
     value->operation_list = ctx->calloc_func(ctx->state, 1, sizeof(LinkedList));
@@ -11598,6 +11788,7 @@ kmip_decode_operations(KMIP *ctx, Operations *value)
 int
 kmip_decode_object_types(KMIP *ctx, ObjectTypes *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     int result = 0;
 
     value->object_list = ctx->calloc_func(ctx->state, 1, sizeof(LinkedList));
@@ -11625,6 +11816,7 @@ kmip_decode_object_types(KMIP *ctx, ObjectTypes *value)
 int
 kmip_decode_alternative_endpoints(KMIP *ctx, AltEndpoints* value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     int result = 0;
 
     value->endpoint_list = ctx->calloc_func(ctx->state, 1, sizeof(LinkedList));
@@ -11652,6 +11844,7 @@ kmip_decode_alternative_endpoints(KMIP *ctx, AltEndpoints* value)
 int
 kmip_decode_server_information(KMIP *ctx, ServerInformation *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
 
     int result = 0;
@@ -11751,6 +11944,7 @@ kmip_decode_server_information(KMIP *ctx, ServerInformation *value)
 int
 kmip_decode_query_response_payload(KMIP *ctx, QueryResponsePayload *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     int result = 0;
 
     int32 tag_type = 0;
@@ -11805,6 +11999,7 @@ kmip_decode_query_response_payload(KMIP *ctx, QueryResponsePayload *value)
 int
 kmip_decode_encrypt_response_payload(KMIP *ctx, EncryptResponsePayload *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;
@@ -11904,6 +12099,7 @@ kmip_decode_encrypt_response_payload(KMIP *ctx, EncryptResponsePayload *value)
 int
 kmip_decode_decrypt_response_payload(KMIP *ctx, DecryptResponsePayload *value)
 {
+    CHECK_DECODE_ARGS(ctx, value);
     CHECK_BUFFER_FULL(ctx, 8);
     
     int result = 0;

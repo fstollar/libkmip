@@ -1575,7 +1575,7 @@ int kmip_is_tag_next(const KMIP *, enum tag);
 int kmip_is_tag_type_next(const KMIP *, enum tag, enum type);
 size_t kmip_get_num_items_next(KMIP *, enum tag);
 uint32 kmip_peek_tag(KMIP *ctx);
-uint32 kmip_skip_tag(KMIP *ctx);
+int32 kmip_skip_tag(KMIP *ctx);
 int kmip_is_attribute_tag(uint32);
 
 /*
