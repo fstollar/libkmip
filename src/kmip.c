@@ -1399,7 +1399,7 @@ kmip_set_buffer(KMIP *ctx, void *buffer, size_t buffer_size)
     }
 
     /* TODO (fst): Should we not free the old buffer if present? Example:*/
-    
+/*    
     if(ctx->buffer != NULL)
     {
         kmip_memset(ctx->buffer, 0, ctx->size);
@@ -1408,7 +1408,7 @@ kmip_set_buffer(KMIP *ctx, void *buffer, size_t buffer_size)
         ctx->index = ctx->buffer;
         ctx->size = 0;
     }
- 
+*/ 
 
     /* TODO (ph) Add own_buffer if buffer == NULL? */
     ctx->buffer = (uint8 *)buffer;

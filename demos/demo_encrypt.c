@@ -16,6 +16,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include "kmip.h"
+#include "kmip_io.h"
 #include "kmip_bio.h"
 
 void
@@ -210,6 +211,7 @@ main(int argc, char **argv)
     if(result != KMIP_OK)
     {
         fprintf(stderr, "Encryption failed with error code: %d\n", result);
+        kmip_print_error_string(stderr, result); printf("\n");
         BIO_free_all(bio);
         return(1);
     }
@@ -238,6 +240,7 @@ main(int argc, char **argv)
     if(result != KMIP_OK)
     {
         fprintf(stderr, "Decryption failed with error code: %d\n", result);
+        kmip_print_error_string(stderr, result);
         free(ciphertext);
         free(iv);
         BIO_free_all(bio);
