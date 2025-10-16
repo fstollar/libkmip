@@ -1709,7 +1709,7 @@ kmip_bio_encrypt_with_context(
     request_message.batch_items = &batch_item;
     request_message.batch_count = 1;
 
-/*    
+    
     // Add the context credential to the request message if it exists.
     // TODO (ph) Update this to add multiple credentials.
     Authentication auth = {0};
@@ -1722,7 +1722,7 @@ kmip_bio_encrypt_with_context(
             request_header.authentication = &auth;
         }
     }
-*/    
+    
     /* Step 2: Encode request */
 
     // TODO: better buffer managment
