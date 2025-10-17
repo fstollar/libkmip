@@ -327,8 +327,7 @@ int use_low_level_api(KMIP *ctx, BIO *bio, enum query_function queries[], size_t
 
 
 int
-use_mid_level_api(BIO* bio,
-                  QueryResponse* query_result)
+use_mid_level_api(BIO* bio,  QueryResponse* query_result)
 {
     /* Set up the KMIP context and send the request message. */
     KMIP kmip_context = {0};
@@ -342,6 +341,8 @@ use_mid_level_api(BIO* bio,
         KMIP_QUERY_SERVER_INFORMATION,
         KMIP_QUERY_APPLICATION_NAMESPACES,
     };
+
+    //printf("DEBUG: Calling kmip_bio_query_with_context\n");
 
     int result = kmip_bio_query_with_context(&kmip_context, bio, queries, ARRAY_LENGTH(queries), query_result);
     
@@ -461,6 +462,8 @@ main(int argc, char **argv)
         SSL_CTX_free(ctx);
         return(-1);
     }
+
+    printf("KMIP server connected. \n");
 
     QueryResponse query_result = {0};
     result = use_mid_level_api(bio, &query_result);

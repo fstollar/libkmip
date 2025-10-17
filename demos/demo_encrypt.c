@@ -141,9 +141,9 @@ connect_to_kmip_server(
 int
 main(int argc, char **argv)
 {
-    if(argc != 7)
+    if(argc < 6)
     {
-        fprintf(stderr, "Usage: %s <server> <port> <cert> <key> <ca> <key_id>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <server> <port> <cert> <key> <ca> <<key_id>>\n", argv[0]);
         fprintf(stderr, "\n");
         fprintf(stderr, "Arguments:\n");
         fprintf(stderr, "  server  - KMIP server hostname\n");
@@ -151,7 +151,7 @@ main(int argc, char **argv)
         fprintf(stderr, "  cert    - Path to client certificate\n");
         fprintf(stderr, "  key     - Path to client private key\n");
         fprintf(stderr, "  ca      - Path to CA certificate\n");
-        fprintf(stderr, "  key_id  - Unique identifier of encryption key\n");
+        fprintf(stderr, "  key_id  - (optional) Unique identifier of encryption key\n");
         return(1);
     }
     
@@ -160,7 +160,14 @@ main(int argc, char **argv)
     const char *cert_path = argv[3];
     const char *key_path = argv[4];
     const char *ca_path = argv[5];
-    const char *key_id = argv[6];
+    char *key_id = NULL;
+    int key_length = 0;
+    if (argc == 7)
+    {
+        key_id = argv[6];
+        key_length = kmip_strnlen_s(key_id, 32);
+    }
+
     
     /* Test data */
     const char *plaintext_str = "Hello, KMIP! This is a test message for encryption.";
@@ -177,11 +184,35 @@ main(int argc, char **argv)
         fprintf(stderr, "Failed to connect to KMIP server\n");
         return(1);
     }
-    
+
+     /* Create and initialize context */
+    KMIP ctx = {0};
+    kmip_init(&ctx, NULL, 0, KMIP_1_2);
+    int result = 0;
+/*
+    // activate key
+    result = kmip_bio_active_with_context( &ctx, bio, key_id);
+
+    if(result != KMIP_OK)
+    {
+        fprintf(stderr, "Key activation failed with error code: %d (", result);
+        kmip_print_error_string(stderr, result); fprintf(stderr, ")\n");
+        kmip_destroy(&ctx);
+        BIO_free_all(bio);
+        return(1);
+    }
+    else
+    {
+        printf("Key Activation successful!\n");
+    }
+*/
     /* Set up cryptographic parameters */
     CryptographicParameters params = {0};
+    kmip_init_cryptographic_parameters(&params);
+    params.cryptographic_algorithm = KMIP_CRYPTOALG_AES;
     params.block_cipher_mode = KMIP_BLOCK_CBC;
     params.padding_method = KMIP_PAD_PKCS5;
+//    params.hashing_algorithm = KMIP_HASH_SHA3_256;
     params.random_iv = KMIP_TRUE;  /* Request server to generate IV */
     
     printf("\nCryptographic parameters:\n");
@@ -196,10 +227,10 @@ main(int argc, char **argv)
     uint8 *iv = NULL;
     int iv_size = 0;
     
-    int result = kmip_bio_encrypt(
-        bio,
-        (char *)key_id,
-        strlen(key_id),
+    result = kmip_bio_encrypt_with_context(
+        &ctx, bio,
+        key_id,
+        key_length,
         plaintext,
         plaintext_size,
         &params,
@@ -210,8 +241,9 @@ main(int argc, char **argv)
     
     if(result != KMIP_OK)
     {
-        fprintf(stderr, "Encryption failed with error code: %d\n", result);
-        kmip_print_error_string(stderr, result); printf("\n");
+        fprintf(stderr, "Encryption failed with error code: %d (", result);
+        kmip_print_error_string(stderr, result); fprintf(stderr, ")\n");
+        kmip_destroy(&ctx);
         BIO_free_all(bio);
         return(1);
     }
@@ -225,8 +257,8 @@ main(int argc, char **argv)
     uint8 *decrypted = NULL;
     int decrypted_size = 0;
     
-    result = kmip_bio_decrypt(
-        bio,
+    result = kmip_bio_decrypt_with_context(
+        &ctx, bio,
         (char *)key_id,
         strlen(key_id),
         ciphertext,
@@ -241,6 +273,7 @@ main(int argc, char **argv)
     {
         fprintf(stderr, "Decryption failed with error code: %d\n", result);
         kmip_print_error_string(stderr, result);
+        kmip_destroy(&ctx);
         free(ciphertext);
         free(iv);
         BIO_free_all(bio);
@@ -268,6 +301,7 @@ main(int argc, char **argv)
     }
     
     /* Cleanup */
+    kmip_destroy(&ctx);
     free(ciphertext);
     free(iv);
     free(decrypted);

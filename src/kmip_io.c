@@ -2833,13 +2833,35 @@ kmip_print_destroy_response_payload(FILE *f, int indent, DestroyResponsePayload 
 }
 
 void
+kmip_print_activate_request_payload(FILE *f, int indent, ActivateRequestPayload *value)
+{
+    fprintf(f, "%*sActivate Request Payload @ %p\n", indent, "", (void *)value);
+    
+    if(value != NULL)
+    {
+        kmip_print_text_string(f, indent + 2, "(O) Unique Identifier", value->unique_identifier);
+    }
+}
+
+void
+kmip_print_activate_response_payload(FILE *f, int indent, ActivateResponsePayload *value)
+{
+    fprintf(f, "%*sActivate Response Payload @ %p\n", indent, "", (void *)value);
+    
+    if(value != NULL)
+    {
+        kmip_print_text_string(f, indent + 2, "(O) Unique Identifier", value->unique_identifier);
+    }
+}
+
+void
 kmip_print_encrypt_request_payload(FILE *f, int indent, EncryptRequestPayload *value)
 {
     fprintf(f, "%*sEncrypt Request Payload @ %p\n", indent, "", (void *)value);
     
     if(value != NULL)
     {
-        kmip_print_text_string(f, indent + 2, "(R) Unique Identifier", value->unique_identifier);
+        kmip_print_text_string(f, indent + 2, "(O) Unique Identifier", value->unique_identifier);
         
         kmip_print_cryptographic_parameters(f, indent + 2, value->cryptographic_parameters);
         
@@ -2865,7 +2887,7 @@ kmip_print_encrypt_response_payload(FILE *f, int indent, EncryptResponsePayload 
     {
         kmip_print_text_string(f, indent + 2, "(R) Unique Identifier", value->unique_identifier);
         
-        kmip_print_byte_string(f, indent + 2, "(R) Data", value->data);
+        kmip_print_byte_string(f, indent + 2, "(O) Data", value->data);
 
         kmip_print_byte_string(f, indent + 2, "(O) iv_counter_nonce", value->iv_counter_nonce);
 
@@ -2882,7 +2904,7 @@ kmip_print_decrypt_request_payload(FILE *f, int indent, DecryptRequestPayload *v
     
     if(value != NULL)
     {
-        kmip_print_text_string(f, indent + 2, "(R) Unique Identifier", value->unique_identifier);
+        kmip_print_text_string(f, indent + 2, "(O) Unique Identifier", value->unique_identifier);
         
         kmip_print_cryptographic_parameters(f, indent + 2, value->cryptographic_parameters);
         
@@ -2909,9 +2931,9 @@ kmip_print_decrypt_response_payload(FILE *f, int indent, DecryptResponsePayload 
     {
         kmip_print_text_string(f, indent + 2, "(R) Unique Identifier", value->unique_identifier);
         
-        kmip_print_byte_string(f, indent + 2, "(R) Data", value->data);
+        kmip_print_byte_string(f, indent + 2, "(O) Data", value->data);
 
-        kmip_print_text_string(f, indent + 2, "(O) correlation_value", value->correlation_value);
+        kmip_print_text_string(f, indent + 2, "(O) CorrelationValue", value->correlation_value);
     }
 }
 
@@ -2942,6 +2964,10 @@ kmip_print_request_payload(FILE *f, int indent, enum operation type, void *value
 
         case KMIP_OP_DECRYPT:
         kmip_print_decrypt_request_payload(f, indent, value);
+        break;
+
+        case KMIP_OP_ACTIVATE:
+        kmip_print_activate_request_payload(f, indent, value);
         break;
 
         default:
@@ -2977,6 +3003,10 @@ kmip_print_response_payload(FILE *f, int indent, enum operation type, void *valu
 
         case KMIP_OP_DECRYPT:
         kmip_print_decrypt_response_payload(f, indent, value);
+        break;
+
+        case KMIP_OP_ACTIVATE:
+        kmip_print_activate_response_payload(f, indent, value);
         break;
 
         default:

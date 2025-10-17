@@ -167,6 +167,10 @@ use_low_level_api(const char *server_address,
     int32 mask = KMIP_CRYPTOMASK_ENCRYPT | KMIP_CRYPTOMASK_DECRYPT;
     a[2].type = KMIP_ATTR_CRYPTOGRAPHIC_USAGE_MASK;
     a[2].value = &mask;
+
+//    int64 datetime = time(NULL) -1;
+//    a[3].type = KMIP_ATTR_ACTIVATION_DATE;
+//    a[3].value = &datetime;
     
     TemplateAttribute ta = {0};
     ta.attributes = a;

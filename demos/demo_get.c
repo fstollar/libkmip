@@ -166,7 +166,7 @@ use_mid_level_api(char *server_address,
     bio = BIO_new_ssl_connect(ctx);
     if(bio == NULL)
     {
-        printf("BIO_new_ssl_connect failed\n");
+        fprintf(stderr, "BIO_new_ssl_connect failed\n");
         SSL_CTX_free(ctx);
         return(-1);
     }
@@ -220,7 +220,7 @@ use_mid_level_api(char *server_address,
     
     if(result != KMIP_OK)
     {
-        printf("Failed to add credential to the KMIP context.\n");
+        fprintf(stderr, "Failed to add credential to the KMIP context.\n");
         BIO_free_all(bio);
         SSL_CTX_free(ctx);
         kmip_destroy(&kmip_context);
@@ -236,13 +236,13 @@ use_mid_level_api(char *server_address,
     printf("\n");
     if(result < 0)
     {
-        printf("An error occurred while creating the symmetric key.");
-        printf("Error Code: %d\n", result);
-        printf("Error Name: ");
+        fprintf(stderr, "An error occurred while creating the symmetric key.\n");
+        fprintf(stderr, "Error Code: %d\n", result);
+        fprintf(stderr, "Error Name: ");
         kmip_print_error_string(stderr, result);
-        printf("\n");
-        printf("Context Error: %s\n", kmip_context.error_message);
-        printf("Stack trace:\n");
+        fprintf(stderr, "\n");
+        fprintf(stderr, "Context Error: %s\n", kmip_context.error_message);
+        fprintf(stderr, "Stack trace:\n");
         kmip_print_stack_trace(stderr, &kmip_context);
     }
     else if(result >= 0)

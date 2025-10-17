@@ -892,6 +892,7 @@ kmip_check_enum_value(enum kmip_version version, enum tag t, int value)
             case KMIP_OP_GET:
             case KMIP_OP_DESTROY:
             case KMIP_OP_QUERY:
+            case KMIP_OP_ACTIVATE:
             return(KMIP_OK);
             break;
 
@@ -2693,6 +2694,10 @@ kmip_free_request_batch_item(KMIP *ctx, RequestBatchItem *value)
                 kmip_free_decrypt_request_payload(ctx, (DecryptRequestPayload *)value->request_payload);
                 break;
 
+                case KMIP_OP_ACTIVATE:
+//                kmip_free_activate_request_payload(ctx, (ActivateRequestPayload *)value->request_payload);
+                break;
+
                 default:
                 /* NOTE (ph) Hitting this case means that we don't know    */
                 /*      what the actual type, size, or value of            */
@@ -2769,6 +2774,10 @@ kmip_free_response_batch_item(KMIP *ctx, ResponseBatchItem *value)
 
                 case KMIP_OP_DECRYPT:
 //                kmip_free_decrypt_response_payload(ctx, (DecryptResponsePayload *)value->response_payload);
+                break;
+
+                case KMIP_OP_ACTIVATE:
+//                kmip_free_activate_response_payload(ctx, (ActivateResponsePayload *)value->response_payload);
                 break;
 
 
@@ -3155,27 +3164,24 @@ kmip_free_response_message(KMIP *ctx, ResponseMessage *value)
         return;
     }
 
-    if(value != NULL)
+    if(value->response_header != NULL)
     {
-        if(value->response_header != NULL)
-        {
-            kmip_free_response_header(ctx, value->response_header);
-            ctx->free_func(ctx->state, value->response_header);
-            value->response_header = NULL;
-        }
-        
-        if(value->batch_items != NULL)
-        {
-            for(size_t i = 0; i < value->batch_count; i++)
-            {
-                kmip_free_response_batch_item(ctx, &value->batch_items[i]);
-            }
-            ctx->free_func(ctx, value->batch_items);
-            value->batch_items = NULL;
-        }
-        
-        value->batch_count = 0;
+        kmip_free_response_header(ctx, value->response_header);
+        ctx->free_func(ctx->state, value->response_header);
+        value->response_header = NULL;
     }
+        
+    if(value->batch_items != NULL)
+    {
+        for(size_t i = 0; i < value->batch_count; i++)
+        {
+            kmip_free_response_batch_item(ctx, &value->batch_items[i]);
+        }
+        ctx->free_func(ctx, value->batch_items);
+        value->batch_items = NULL;
+    }
+    
+    value->batch_count = 0;
     
     return;
 }
@@ -3188,16 +3194,26 @@ kmip_free_query_functions(KMIP *ctx, Functions* value)
         return;
     }
 
+    //printf("DEBUG Executing kmip_free_query_functions\n");
+
     if (value->function_list != NULL)
     {
         LinkedListItem *curr = kmip_linked_list_pop(value->function_list);
         while(curr != NULL)
         {
-            ctx->free_func(ctx->state, curr->data);
-            curr->data = NULL;
+            //printf("DEBUG while loop 1\n");
+            if(curr->data != NULL)
+            {
+                // TODO (fst) This cannot free objects from the stack like in demo_query, is this ever useful?
+                //ctx->free_func(ctx->state, curr->data);
+                curr->data = NULL;
+            }
+            //printf("DEBUG while loop 2\n");
             ctx->free_func(ctx->state, curr);
+            //printf("DEBUG while loop 3\n");
             curr = kmip_linked_list_pop(value->function_list);
         }
+        //printf("DEBUG while loop END\n");
         ctx->free_func(ctx->state, value->function_list);
         value->function_list = NULL;
     }
@@ -3251,10 +3267,13 @@ kmip_free_query_request_payload(KMIP *ctx, QueryRequestPayload *value)
         return;
     }
 
+    //printf("DEBUG Executing kmip_free_query_request_payload\n");
+
     if (value->functions != NULL)
     {
         kmip_free_query_functions(ctx, value->functions);
-        ctx->free_func(ctx->state, value->functions);
+        // TODO (fst) This cannot free objects from the stack like in demo_query, is this ever useful?
+        //ctx->free_func(ctx->state, value->functions);
         value->functions = NULL;
     }
 }
@@ -8602,6 +8621,10 @@ kmip_encode_request_batch_item(KMIP *ctx, const RequestBatchItem *value)
         result = kmip_encode_decrypt_request_payload(ctx, (DecryptRequestPayload*)value->request_payload);
         break;
 
+        case KMIP_OP_ACTIVATE:
+        result = kmip_encode_activate_request_payload(ctx, (ActivateRequestPayload*)value->request_payload);
+        break;
+
         default:
         kmip_push_error_frame(ctx, __func__, __LINE__);
         return(KMIP_NOT_IMPLEMENTED);
@@ -8684,6 +8707,10 @@ kmip_encode_response_batch_item(KMIP *ctx, const ResponseBatchItem *value)
 
         case KMIP_OP_DECRYPT:
         result = kmip_encode_decrypt_response_payload(ctx, (DecryptResponsePayload*)value->response_payload);
+        break;
+
+        case KMIP_OP_ACTIVATE:
+        result = kmip_encode_activate_response_payload(ctx, (ActivateResponsePayload*)value->response_payload);
         break;
 */
         default:
@@ -8820,6 +8847,43 @@ kmip_encode_query_response_payload(KMIP *ctx, const QueryResponsePayload *value)
     (void) ctx;
     (void) value;
     return(KMIP_NOT_IMPLEMENTED);
+}
+
+
+/*
+ * Encode ActivateRequestPayload
+ * 
+ * This is the main payload for Activate operations.
+ * 
+ * Optional fields: unique_identifier
+ */
+int kmip_encode_activate_request_payload(KMIP *ctx, ActivateRequestPayload *value)
+{
+    int result = 0;
+    
+    /* Write the request payload tag and type */
+    result = kmip_encode_int32_be(ctx, TAG_TYPE(KMIP_TAG_REQUEST_PAYLOAD, KMIP_TYPE_STRUCTURE));
+    CHECK_RESULT(ctx, result);
+    
+    /* Reserve space for length */
+    uint8 *length_index = ctx->index;
+    uint8 *value_index = ctx->index += 4;
+    
+    /* Encode unique_identifier if present (key ID) */
+    if(value->unique_identifier != NULL)
+    {
+        result = kmip_encode_text_string(ctx, KMIP_TAG_UNIQUE_IDENTIFIER, value->unique_identifier);
+        CHECK_RESULT(ctx, result);
+    }
+
+    /* Calculate and write the length */
+    uint8 *curr_index = ctx->index;
+    ctx->index = length_index;
+    result = kmip_encode_length(ctx, curr_index - value_index);
+    CHECK_RESULT(ctx, result);
+    ctx->index = curr_index;
+    
+    return(KMIP_OK);
 }
 
 /*
@@ -11021,6 +11085,12 @@ kmip_decode_request_batch_item(KMIP *ctx, RequestBatchItem *value)
         CHECK_NEW_MEMORY(ctx, value->request_payload, sizeof(DecryptRequestPayload), "DecryptRequestPayload structure");
         result = kmip_decode_decrypt_request_payload(ctx, (DecryptRequestPayload*)value->request_payload);
         break;
+
+        case KMIP_OP_ACTIVATE:
+        value->request_payload = ctx->calloc_func(ctx->state, 1, sizeof(ActivateRequestPayload));
+        CHECK_NEW_MEMORY(ctx, value->request_payload, sizeof(ActivateRequestPayload), "ActivateRequestPayload structure");
+        result = kmip_decode_activate_request_payload(ctx, (ActivateRequestPayload*)value->request_payload);
+        break;
 */        
 
         default:
@@ -11133,6 +11203,12 @@ kmip_decode_response_batch_item(KMIP *ctx, ResponseBatchItem *value)
             value->response_payload = ctx->calloc_func(ctx->state, 1, sizeof(DecryptResponsePayload));
             CHECK_NEW_MEMORY(ctx, value->response_payload, sizeof(DecryptResponsePayload), "DecryptResponsePayload structure");
             result = kmip_decode_decrypt_response_payload(ctx, value->response_payload);
+            break;
+
+            case KMIP_OP_ACTIVATE:
+            value->response_payload = ctx->calloc_func(ctx->state, 1, sizeof(ActivateResponsePayload));
+            CHECK_NEW_MEMORY(ctx, value->response_payload, sizeof(ActivateResponsePayload), "ActivateResponsePayload structure");
+            result = kmip_decode_activate_response_payload(ctx, value->response_payload);
             break;
 
             default:
@@ -11990,6 +12066,62 @@ kmip_decode_query_response_payload(KMIP *ctx, QueryResponsePayload *value)
 
     return(KMIP_OK);
 }
+
+/*
+ * Decode ActivateResponsePayload
+ * 
+ * This is what we get back from the server after activation of a key.
+ */
+int
+kmip_decode_activate_response_payload(KMIP *ctx, ActivateResponsePayload *value)
+{
+    CHECK_DECODE_ARGS(ctx, value);
+    CHECK_BUFFER_FULL(ctx, 8);
+    
+    int result = 0;
+    int32 tag_type = 0;
+    uint32 length = 0;
+    
+    /* Read and verify tag/type */
+    result = kmip_decode_int32_be(ctx, &tag_type);
+    CHECK_RESULT(ctx, result);
+    CHECK_TAG_TYPE(ctx, tag_type, KMIP_TAG_RESPONSE_PAYLOAD, KMIP_TYPE_STRUCTURE);
+    
+    /* Read length */
+    result = kmip_decode_int32_be(ctx, &length);
+    CHECK_RESULT(ctx, result);
+    CHECK_BUFFER_FULL(ctx, length);
+    
+    /* Allocate memory for mandatory fields */
+    value->unique_identifier = ctx->calloc_func(ctx->state, 1, sizeof(TextString));
+
+    /* Track position */
+    uint8 *value_index = ctx->index;
+    
+    /* Decode fields in any order */
+    while((ctx->index - value_index) < length)
+    {
+        uint32 tag = kmip_peek_tag(ctx);
+        
+        switch(tag)
+        {
+            case KMIP_TAG_UNIQUE_IDENTIFIER:
+                result = kmip_decode_text_string(ctx, KMIP_TAG_UNIQUE_IDENTIFIER, value->unique_identifier);
+                CHECK_RESULT(ctx, result);
+                break;
+
+            default:
+                /* Skip unknown tags */
+                result = kmip_skip_tag(ctx);
+                CHECK_RESULT(ctx, result);
+                /* TODO: Should we extra handle unknown tags? */
+                break;
+        }
+    }
+    
+    return(KMIP_OK);
+}
+
 
 /*
  * Decode EncryptResponsePayload

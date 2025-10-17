@@ -1072,6 +1072,17 @@ typedef struct destroy_response_payload
     TextString *unique_identifier;
 } DestroyResponsePayload;
 
+typedef struct activate_request_payload
+{
+    TextString *unique_identifier;
+} ActivateRequestPayload;
+
+typedef struct activate_response_payload
+{
+    TextString *unique_identifier;
+} ActivateResponsePayload;
+
+
 /* Authentication Structures */
 
 typedef struct credential
@@ -1775,6 +1786,7 @@ int kmip_encode_response_message(KMIP *, const ResponseMessage *);
 int kmip_encode_query_functions(KMIP *ctx, const Functions*);
 int kmip_encode_query_request_payload(KMIP *, const QueryRequestPayload *);
 int kmip_encode_query_response_payload(KMIP *, const QueryResponsePayload *);
+int kmip_encode_activate_request_payload(KMIP *ctx, ActivateRequestPayload *value);
 int kmip_encode_encrypt_request_payload(KMIP *ctx, const EncryptRequestPayload *value);
 //int kmip_encode_encrypt_response_payload(KMIP *ctx, const EncryptRequestPayload *value);
 int kmip_encode_decrypt_request_payload(KMIP *ctx, const DecryptRequestPayload *value);
@@ -1843,6 +1855,7 @@ int kmip_decode_object_types(KMIP *, ObjectTypes *);
 int kmip_decode_query_request_payload(KMIP *, QueryRequestPayload *);
 int kmip_decode_query_response_payload(KMIP *, QueryResponsePayload *);
 int kmip_decode_server_information(KMIP *ctx, ServerInformation *);
+int kmip_decode_activate_response_payload(KMIP *ctx, ActivateResponsePayload *value);
 int kmip_decode_encrypt_response_payload(KMIP *ctx, EncryptResponsePayload *value);
 int kmip_decode_decrypt_response_payload(KMIP *ctx, DecryptResponsePayload *value);
 

@@ -944,7 +944,7 @@ int kmip_bio_get_symmetric_key_with_context(KMIP *ctx, BIO *bio,
                                             char *uuid, int uuid_size,
                                             char **key, int *key_size)
 {
-    if(ctx == NULL || bio == NULL || uuid == NULL || uuid_size <= 0 || key == NULL || key_size == NULL)
+    if(ctx == NULL || bio == NULL || key == NULL || key_size == NULL)
     {
         return(KMIP_ARG_INVALID);
     }
@@ -1486,7 +1486,6 @@ int kmip_bio_query_with_context(KMIP *ctx, BIO *bio, enum query_function queries
 
     /* Build the request message. */
 
-
     ProtocolVersion pv = {0};
     kmip_init_protocol_version(&pv, ctx->version);
 
@@ -1521,6 +1520,8 @@ int kmip_bio_query_with_context(KMIP *ctx, BIO *bio, enum query_function queries
     rm.batch_items = &rbi;
     rm.batch_count = 1;
 
+    //printf("DEBUG Call kmip_encode_request_message\n");
+
     /* Encode the request message. Dynamically resize the encoding buffer */
     /* if it's not big enough. Once encoding succeeds, send the request   */
     /* message.                                                           */
@@ -1550,36 +1551,46 @@ int kmip_bio_query_with_context(KMIP *ctx, BIO *bio, enum query_function queries
         return(encode_result);
     }
 
-    char *response = NULL;
+    char *response_buffer = NULL;
     int response_size = 0;
 
-    int result = kmip_bio_send_request_encoding(ctx, bio, (char *)encoding, ctx->index - ctx->buffer, &response, &response_size);
+    //printf("DEBUG Call kmip_bio_send_request_encoding\n");
+
+    int result = kmip_bio_send_request_encoding(ctx, bio, (char *)encoding, ctx->index - ctx->buffer, &response_buffer, &response_size);
     if(result < 0)
     {
         kmip_free_buffer(ctx, encoding, buffer_total_size);
-        kmip_free_buffer(ctx, response, response_size);
+        kmip_free_buffer(ctx, response_buffer, response_size);
         encoding = NULL;
-        response = NULL;
+        response_buffer = NULL;
         kmip_set_buffer(ctx, NULL, 0);
         return(result);
     }
 
+    //printf("DEBUG Call kmip_free_query_request_payload\n");
+
     kmip_free_query_request_payload(ctx, &qrp);
 
-    if (response)
+    //printf("DEBUG Finished kmip_free_query_request_payload\n");
+
+    if (response_buffer)
     {
         FILE* out = fopen( "/tmp/kmip_query.dat", "w" );
         if (out)
         {
-            fwrite( response, response_size, 1, out );
+            fwrite( response_buffer, response_size, 1, out );
             fclose(out);
         }
-        // kmip_print_buffer(response, response_size);
+        // kmip_print_buffer(response_buffer, response_size);
     }
+
+    //printf("DEBUG Call kmip_free_buffer *2\n");
 
     kmip_free_buffer(ctx, encoding, buffer_total_size);
     encoding = NULL;
-    kmip_set_buffer(ctx, response, response_size);
+    kmip_set_buffer(ctx, response_buffer, response_size);
+
+    //printf("DEBUG Call kmip_decode_response_message\n");
 
     /* Decode the response message and retrieve the operation results. */
     ResponseMessage resp_m = {0};
@@ -1587,8 +1598,8 @@ int kmip_bio_query_with_context(KMIP *ctx, BIO *bio, enum query_function queries
     if(decode_result != KMIP_OK)
     {
         kmip_free_response_message(ctx, &resp_m);
-        kmip_free_buffer(ctx, response, response_size);
-        response = NULL;
+        kmip_free_buffer(ctx, response_buffer, response_size);
+        response_buffer = NULL;
         kmip_set_buffer(ctx, NULL, 0);
         return(decode_result);
     }
@@ -1596,18 +1607,18 @@ int kmip_bio_query_with_context(KMIP *ctx, BIO *bio, enum query_function queries
     if(resp_m.batch_count != 1 || resp_m.batch_items == NULL)
     {
         kmip_free_response_message(ctx, &resp_m);
-        kmip_free_buffer(ctx, response, response_size);
-        response = NULL;
+        kmip_free_buffer(ctx, response_buffer, response_size);
+        response_buffer = NULL;
         kmip_set_buffer(ctx, NULL, 0);
         return(KMIP_MALFORMED_RESPONSE);
     }
 
     ResponseBatchItem resp_item = resp_m.batch_items[0];
-    enum result_status result_status = resp_item.result_status;
+    enum result_status resultstatus = resp_item.result_status;
 
     kmip_set_last_result(&resp_item);
 
-    if(result == KMIP_STATUS_SUCCESS)
+    if(resultstatus == KMIP_STATUS_SUCCESS)
     {
         kmip_copy_query_result(query_result, (QueryResponsePayload*) resp_item.response_payload);
     }
@@ -1615,15 +1626,169 @@ int kmip_bio_query_with_context(KMIP *ctx, BIO *bio, enum query_function queries
     /* Clean up the response message, the response buffer, and the KMIP */
     /* context.                                                         */
     kmip_free_response_message(ctx, &resp_m);
-    kmip_free_buffer(ctx, response, response_size);
-    response = NULL;
+    kmip_free_buffer(ctx, response_buffer, response_size);
+    response_buffer = NULL;
 
-    return(result_status);
+    return(resultstatus);
 }
 
 /*
  * Mid-Level API Implementation
  */
+
+int kmip_bio_active_with_context(KMIP *ctx, BIO *bio, char* key_uuid)
+{
+    if(ctx == NULL || bio == NULL)
+    {
+        return(KMIP_ARG_INVALID);
+    }
+
+    // Reset context for new operation
+    kmip_reset(ctx);
+
+    /* Set up the initial encoding buffer. */
+    size_t buffer_blocks = 1;
+    size_t buffer_block_size = 1024;
+    size_t buffer_total_size = buffer_blocks * buffer_block_size;
+    
+    uint8 *buffer = ctx->calloc_func(ctx->state, buffer_blocks, buffer_block_size);
+    if(buffer == NULL)
+    {
+        return(KMIP_MEMORY_ALLOC_FAILED);
+    }
+    kmip_set_buffer(ctx, buffer, buffer_total_size);
+
+    /* Step 1: Build RequestMessage structure */
+    ProtocolVersion protocol_version = {0};
+    kmip_init_protocol_version(&protocol_version, ctx->version);
+    
+    RequestHeader request_header = {0};
+    kmip_init_request_header(&request_header);
+    request_header.protocol_version = &protocol_version;
+    request_header.maximum_response_size = ctx->max_message_size;
+    request_header.time_stamp = time(NULL);
+    request_header.batch_count = 1;
+
+    /* Build Activate Request Payload */
+    TextString unique_id = {0};
+
+    ActivateRequestPayload activate_payload = {0};
+    activate_payload.unique_identifier = NULL;
+
+    // Set unique identifier
+    if(key_uuid != NULL)
+    {
+        unique_id.value = key_uuid;
+        unique_id.size = kmip_strnlen_s(key_uuid,32);
+        activate_payload.unique_identifier = &unique_id;
+    }
+
+    /* Build Batch Item */
+    RequestBatchItem batch_item = {0};
+    kmip_init_request_batch_item(&batch_item);
+    batch_item.operation = KMIP_OP_ACTIVATE;
+    batch_item.request_payload = &activate_payload;
+    
+    /* Build Request Message */
+    RequestMessage request_message = {0};
+    request_message.request_header = &request_header;
+    request_message.batch_items = &batch_item;
+    request_message.batch_count = 1;
+    
+    // Add the context credential to the request message if it exists.
+    // TODO (ph) Update this to add multiple credentials.
+    Authentication auth = {0};
+    if(ctx->credential_list != NULL)
+    {
+        LinkedListItem *item = ctx->credential_list->head;
+        if(item != NULL)
+        {
+            auth.credential = (Credential *)item->data;
+            request_header.authentication = &auth;
+        }
+    }
+    
+    /* Step 2: Encode request */
+    int encode_result = kmip_encode_request_message(ctx, &request_message);
+
+    if(encode_result != KMIP_OK)
+    {
+        kmip_free_buffer(ctx, buffer, buffer_total_size);
+        buffer = NULL;
+        kmip_set_buffer(ctx, NULL, 0);
+        kmip_push_error_frame(ctx, __func__, __LINE__);
+        return(encode_result);
+    }
+
+    kmip_print_request_message(stdout, &request_message);
+    printf("\n");
+
+    /* Step 3: Send request and receive response */
+    char *response_buffer = NULL;
+    int response_size = 0;
+
+    int result = kmip_bio_send_request_encoding(ctx, bio, (char *)buffer, ctx->index - ctx->buffer, &response_buffer, &response_size);
+    if(result < 0)
+    {
+        kmip_free_buffer(ctx, buffer, buffer_total_size);
+        kmip_free_buffer(ctx, response_buffer, response_size);
+        buffer = NULL;
+        response_buffer = NULL;
+        kmip_set_buffer(ctx, NULL, 0);
+        return(result);
+    }
+
+    kmip_free_buffer(ctx, buffer, buffer_total_size);
+    buffer = NULL;
+    kmip_set_buffer(ctx, response_buffer, response_size);
+
+    // Decode the response message and retrieve the operation results.
+    ResponseMessage response_message = {0};
+    int decode_result = kmip_decode_response_message(ctx, &response_message);
+    if(decode_result != KMIP_OK)
+    {
+        kmip_push_error_frame(ctx, __func__, __LINE__);
+        kmip_free_response_message(ctx, &response_message);
+        kmip_free_buffer(ctx, response_buffer, response_size);
+        response_buffer = NULL;
+        kmip_set_buffer(ctx, NULL, 0);
+        return(decode_result);
+    }
+
+    kmip_print_response_message(stdout, &response_message);
+    printf("\n");
+
+    if(response_message.batch_count != 1 || response_message.batch_items == NULL)
+    {
+        kmip_push_error_frame(ctx, __func__, __LINE__);
+        kmip_free_response_message(ctx, &response_message);
+        kmip_free_buffer(ctx, response_buffer, response_size);
+        response_buffer = NULL;
+        kmip_set_buffer(ctx, NULL, 0);
+        return(KMIP_MALFORMED_RESPONSE);
+    }
+
+    ResponseBatchItem response_item = response_message.batch_items[0];
+    enum result_status resultstatus = response_item.result_status;
+
+    kmip_set_last_result(&response_item);
+
+    ActivateResponsePayload *activate_response = (ActivateResponsePayload *)response_item.response_payload;
+    if(activate_response == NULL || activate_response->unique_identifier == NULL)
+    {
+        kmip_push_error_frame(ctx, __func__, __LINE__);
+        ctx->free_func(ctx->state, response_buffer);
+        kmip_free_response_message(ctx, &response_message);
+        return(KMIP_INVALID_FIELD);
+    }
+
+    // Clean up the response message, the response buffer, and the KMIP  context.
+    kmip_free_response_message(ctx, &response_message);
+    kmip_free_buffer(ctx, response_buffer, response_size);
+    response_buffer = NULL;
+
+    return(resultstatus);
+}
 
 int
 kmip_bio_encrypt_with_context(
@@ -1639,15 +1804,14 @@ kmip_bio_encrypt_with_context(
     uint8 **iv,
     int *iv_size)
 {
-    if(ctx == NULL || bio == NULL || key_uuid == NULL || key_uuid_size <= 0 || plaintext == NULL || ciphertext == NULL || ciphertext_size == NULL)
+    if(ctx == NULL || bio == NULL || plaintext == NULL || plaintext_size < 0 || ciphertext == NULL || ciphertext_size == NULL)
     {
         return(KMIP_ARG_INVALID);
     }
     
-//    /* Reset context for new operation */
+    // Reset context for new operation
     kmip_reset(ctx);
-//    ctx->credential_list = NULL;
-//    ctx->credential_count = 0;
+
 
     /* Set up the initial encoding buffer. */
     size_t buffer_blocks = 1;
@@ -1674,15 +1838,13 @@ kmip_bio_encrypt_with_context(
     
     /* Build Encrypt Request Payload */
     TextString unique_id = {0};
-    unique_id.value = key_uuid;
-    unique_id.size = key_uuid_size;
     
     ByteString data = {0};
     data.value = plaintext;
     data.size = plaintext_size;
     
     EncryptRequestPayload encrypt_payload = {0};
-    encrypt_payload.unique_identifier = &unique_id;
+    encrypt_payload.unique_identifier = NULL;
     encrypt_payload.cryptographic_parameters = NULL;
     encrypt_payload.data = &data;
     encrypt_payload.iv_counter_nonce = NULL; /* TODO how to implement this? */
@@ -1695,6 +1857,13 @@ kmip_bio_encrypt_with_context(
     if(params != NULL)
     {
         encrypt_payload.cryptographic_parameters = params;
+    }
+    // Set unique identifier
+    if(key_uuid != NULL)
+    {
+        unique_id.value = key_uuid;
+        unique_id.size = key_uuid_size;
+        encrypt_payload.unique_identifier = &unique_id;
     }
     
     /* Build Batch Item */
