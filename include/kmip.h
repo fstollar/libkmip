@@ -1656,6 +1656,8 @@ void kmip_free_encrypt_request_payload(KMIP *ctx, EncryptRequestPayload *value);
 void kmip_free_encrypt_response_payload(KMIP *ctx, EncryptResponsePayload *value);
 void kmip_free_decrypt_request_payload(KMIP *ctx, DecryptRequestPayload *value);
 void kmip_free_decrypt_response_payload(KMIP *ctx, DecryptResponsePayload *value);
+void kmip_free_activate_request_payload(KMIP *ctx, ActivateRequestPayload *value);
+void kmip_free_activate_response_payload(KMIP *ctx, ActivateResponsePayload *value);
 
 /*
 Copying Functions

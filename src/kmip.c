@@ -1399,18 +1399,6 @@ kmip_set_buffer(KMIP *ctx, void *buffer, size_t buffer_size)
         return;
     }
 
-    /* TODO (fst): Should we not free the old buffer if present? Example:*/
-/*    
-    if(ctx->buffer != NULL)
-    {
-        kmip_memset(ctx->buffer, 0, ctx->size);
-        ctx->free_func(ctx->state, ctx->buffer);
-        ctx->buffer = NULL;
-        ctx->index = ctx->buffer;
-        ctx->size = 0;
-    }
-*/ 
-
     /* TODO (ph) Add own_buffer if buffer == NULL? */
     ctx->buffer = (uint8 *)buffer;
     ctx->index = ctx->buffer;
@@ -1425,11 +1413,10 @@ kmip_destroy(KMIP *ctx)
         return;
     }
     
-//    kmip_reset(ctx);
+    kmip_reset(ctx);
     kmip_set_buffer(ctx, NULL, 0);
 
-    /* TODO: Should we free error_message? Is probably not clean without */
-    kmip_clear_errors(ctx);
+    /* NOTE (fst): Should we free error_message? Is probably not clean without */
 
     kmip_remove_credentials(ctx);
     ctx->memset_func(ctx->credential_list, 0, sizeof(LinkedList));
@@ -1660,6 +1647,7 @@ kmip_skip_tag(KMIP *ctx)
             
     if(BUFFER_BYTES_LEFT(ctx) >= length)
     {
+        // we can skip over the TTLV entry
         ctx->index += length;
         return(KMIP_TRUE);
     }
@@ -2715,7 +2703,7 @@ kmip_free_request_batch_item(KMIP *ctx, RequestBatchItem *value)
                 break;
 
                 case KMIP_OP_ACTIVATE:
-//                kmip_free_activate_request_payload(ctx, (ActivateRequestPayload *)value->request_payload);
+                kmip_free_activate_request_payload(ctx, (ActivateRequestPayload *)value->request_payload);
                 break;
 
                 default:
@@ -2789,15 +2777,15 @@ kmip_free_response_batch_item(KMIP *ctx, ResponseBatchItem *value)
                 break;
 
                 case KMIP_OP_ENCRYPT:
-//                kmip_free_encrypt_response_payload(ctx, (EncryptResponsePayload *)value->response_payload);
+                kmip_free_encrypt_response_payload(ctx, (EncryptResponsePayload *)value->response_payload);
                 break;
 
                 case KMIP_OP_DECRYPT:
-//                kmip_free_decrypt_response_payload(ctx, (DecryptResponsePayload *)value->response_payload);
+                kmip_free_decrypt_response_payload(ctx, (DecryptResponsePayload *)value->response_payload);
                 break;
 
                 case KMIP_OP_ACTIVATE:
-//                kmip_free_activate_response_payload(ctx, (ActivateResponsePayload *)value->response_payload);
+                kmip_free_activate_response_payload(ctx, (ActivateResponsePayload *)value->response_payload);
                 break;
 
 
@@ -3214,26 +3202,20 @@ kmip_free_query_functions(KMIP *ctx, Functions* value)
         return;
     }
 
-    //printf("DEBUG Executing kmip_free_query_functions\n");
-
     if (value->function_list != NULL)
     {
         LinkedListItem *curr = kmip_linked_list_pop(value->function_list);
         while(curr != NULL)
         {
-            //printf("DEBUG while loop 1\n");
             if(curr->data != NULL)
             {
                 // TODO (fst) This cannot free objects from the stack like in demo_query, is this ever useful?
                 //ctx->free_func(ctx->state, curr->data);
                 curr->data = NULL;
             }
-            //printf("DEBUG while loop 2\n");
             ctx->free_func(ctx->state, curr);
-            //printf("DEBUG while loop 3\n");
             curr = kmip_linked_list_pop(value->function_list);
         }
-        //printf("DEBUG while loop END\n");
         ctx->free_func(ctx->state, value->function_list);
         value->function_list = NULL;
     }
@@ -3286,8 +3268,6 @@ kmip_free_query_request_payload(KMIP *ctx, QueryRequestPayload *value)
     {
         return;
     }
-
-    //printf("DEBUG Executing kmip_free_query_request_payload\n");
 
     if (value->functions != NULL)
     {
@@ -3468,6 +3448,22 @@ kmip_free_decrypt_request_payload(KMIP *ctx, DecryptRequestPayload *value)
 }
 
 void
+kmip_free_activate_request_payload(KMIP *ctx, ActivateRequestPayload *value)
+{
+    if(ctx == NULL || value == NULL)
+    {
+        return;
+    }
+    
+    if(value->unique_identifier != NULL)
+    {
+        kmip_free_text_string(ctx, value->unique_identifier);
+        ctx->free_func(ctx->state, value->unique_identifier);
+        value->unique_identifier = NULL;
+    }
+}
+
+void
 kmip_free_encrypt_response_payload(KMIP *ctx, EncryptResponsePayload *value)
 {
     if(ctx == NULL || value == NULL)
@@ -3541,6 +3537,21 @@ kmip_free_decrypt_response_payload(KMIP *ctx, DecryptResponsePayload *value)
     }
 }
 
+void
+kmip_free_activate_response_payload(KMIP *ctx, ActivateResponsePayload *value)
+{
+    if(ctx == NULL || value == NULL)
+    {
+        return;
+    }
+    
+    if(value->unique_identifier != NULL)
+    {
+        kmip_free_text_string(ctx, value->unique_identifier);
+        ctx->free_func(ctx->state, value->unique_identifier);
+        value->unique_identifier = NULL;
+    }
+}
 
 
 void
@@ -5371,7 +5382,13 @@ kmip_compare_request_batch_item(const RequestBatchItem *a, const RequestBatchIte
                 }
                 break;
 
-                // TODO (fst): Add encrypt and decrypt compare
+                case KMIP_OP_ENCRYPT:
+                case KMIP_OP_DECRYPT:
+                case KMIP_OP_ACTIVATE:
+                {
+                    // NOTE (fst) not implemented
+                    return(KMIP_FALSE);
+                }
                 
                 default:
                 /* NOTE (ph) Unsupported payloads cannot be compared. */
@@ -5485,7 +5502,13 @@ kmip_compare_response_batch_item(const ResponseBatchItem *a, const ResponseBatch
                 }
                 break;
 
-                // TODO (fst): Add encrypt and decrypt compare
+                case KMIP_OP_ENCRYPT:
+                case KMIP_OP_DECRYPT:
+                case KMIP_OP_ACTIVATE:
+                {
+                    // NOTE (fst) not implemented
+                    return(KMIP_FALSE);
+                }
 
                 default:
                 /* NOTE (ph) Unsupported payloads cannot be compared. */
