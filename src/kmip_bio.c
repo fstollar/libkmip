@@ -1812,7 +1812,6 @@ kmip_bio_encrypt_with_context(
     // Reset context for new operation
     kmip_reset(ctx);
 
-
     /* Set up the initial encoding buffer. */
     size_t buffer_blocks = 1;
     size_t buffer_block_size = 1024;
@@ -1934,26 +1933,27 @@ kmip_bio_encrypt_with_context(
    
     /* Step 3: Send request and receive response */
 
-// TEMP
     char *response_buffer = NULL;
     int response_size = 0;
 
-    int result = kmip_bio_send_request_encoding(ctx, bio, (char *)encoding, ctx->index - ctx->buffer, &response_buffer, &response_size);
-    if(result < 0)
+    int send_result = kmip_bio_send_request_encoding(ctx, bio, (char *)encoding, ctx->index - ctx->buffer, &response_buffer, &response_size);
+
+    if(send_result < 0)
     {
+        kmip_push_error_frame(ctx, __func__, __LINE__);
         kmip_free_buffer(ctx, encoding, buffer_total_size);
         kmip_free_buffer(ctx, response_buffer, response_size);
         encoding = NULL;
         response_buffer = NULL;
         kmip_set_buffer(ctx, NULL, 0);
-        return(result);
+        return(send_result);
     }
 
     kmip_free_buffer(ctx, encoding, buffer_total_size);
     encoding = NULL;
-    kmip_set_buffer(ctx, response_buffer, response_size);
 
-    // Decode the response message and retrieve the operation results.
+    // Step 4: Decode the response message and retrieve the operation results.
+    kmip_set_buffer(ctx, response_buffer, response_size);
     ResponseMessage response_message = {0};
     int decode_result = kmip_decode_response_message(ctx, &response_message);
     if(decode_result != KMIP_OK)
@@ -1979,142 +1979,94 @@ kmip_bio_encrypt_with_context(
         return(KMIP_MALFORMED_RESPONSE);
     }
 
+    /* Step 5: Check operation status */
     ResponseBatchItem response_item = response_message.batch_items[0];
     enum result_status resultstatus = response_item.result_status;
 
     kmip_set_last_result(&response_item);
 
+    if(resultstatus != KMIP_STATUS_SUCCESS)
+    {
+        kmip_push_error_frame(ctx, __func__, __LINE__);
+        kmip_free_response_message(ctx, &response_message);
+        kmip_free_buffer(ctx, response_buffer, response_size);
+        response_buffer = NULL;
+        kmip_set_buffer(ctx, NULL, 0);
+
+        // TODO (fst) handle special responses
+/*        
+        // Return specific error based on status 
+        switch(resultstatus)
+        {
+            case KMIP_STATUS_OPERATION_FAILED:
+                return(KMIP_ERROR_OPERATION_FAILED);
+            case KMIP_STATUS_OPERATION_PENDING:
+                return(KMIP_ERROR_OPERATION_PENDING);
+            case KMIP_STATUS_OPERATION_UNDONE:
+                return(KMIP_ERROR_OPERATION_UNDONE);
+            default:
+                return(KMIP_ERROR_OPERATION_FAILED);
+        }
+*/
+        // TODO (fst) handle response correct
+        return(resultstatus);
+    }
+
     EncryptResponsePayload *encrypt_response = (EncryptResponsePayload *)response_item.response_payload;
     if(encrypt_response == NULL || encrypt_response->data == NULL)
     {
         kmip_push_error_frame(ctx, __func__, __LINE__);
-        ctx->free_func(ctx->state, response_buffer);
         kmip_free_response_message(ctx, &response_message);
+        kmip_free_buffer(ctx, response_buffer, response_size);
+        response_buffer = NULL;
+        kmip_set_buffer(ctx, NULL, 0);
         return(KMIP_INVALID_FIELD);
     }
 
     if(resultstatus == KMIP_STATUS_SUCCESS)
     {
-        //kmip_copy_query_result(query_result, (QueryResponsePayload*) response_item.response_payload);
-        // Copy ciphertext to output
-        *ciphertext_size = encrypt_response->data->size;
-        *ciphertext = ctx->calloc_func(ctx->state, 1, *ciphertext_size);
-
-        if(*ciphertext == NULL)
+        if(encrypt_response->data != NULL && encrypt_response->data->value != NULL && encrypt_response->data->size > 0)
         {
-            kmip_push_error_frame(ctx, __func__, __LINE__);
-            ctx->free_func(ctx->state, response_buffer);
-            kmip_free_response_message(ctx, &response_message);
-            return(KMIP_MEMORY_ALLOC_FAILED);
+            // Copy ciphertext to output
+            *ciphertext_size = encrypt_response->data->size;
+            *ciphertext = ctx->calloc_func(ctx->state, 1, *ciphertext_size);
+
+            if(*ciphertext == NULL)
+            {
+                kmip_push_error_frame(ctx, __func__, __LINE__);
+                ctx->free_func(ctx->state, response_buffer);
+                kmip_free_response_message(ctx, &response_message);
+                return(KMIP_MEMORY_ALLOC_FAILED);
+            }
+            kmip_memcpy(ctx, *ciphertext, encrypt_response->data->value, *ciphertext_size);
         }
-        kmip_memcpy(ctx, *ciphertext, encrypt_response->data->value, *ciphertext_size);
+
+        // Copy IV_COUNTER_NONCE
+        if(encrypt_response->iv_counter_nonce != NULL && encrypt_response->iv_counter_nonce->value != NULL && encrypt_response->iv_counter_nonce->size > 0)
+        {
+            // Copy IV_COUNTER_NONCE to output
+            *iv_size = encrypt_response->iv_counter_nonce->size;
+            *iv = ctx->calloc_func(ctx->state, 1, *iv_size);
+
+            if(*iv == NULL)
+            {
+                kmip_push_error_frame(ctx, __func__, __LINE__);
+                ctx->free_func(ctx->state, response_buffer);
+                kmip_free_response_message(ctx, &response_message);
+                return(KMIP_MEMORY_ALLOC_FAILED);
+            }
+            kmip_memcpy(ctx, *iv, encrypt_response->iv_counter_nonce->value, *iv_size);
+
+        }
+
     }
 
     // Clean up the response message, the response buffer, and the KMIP  context.
     kmip_free_response_message(ctx, &response_message);
     kmip_free_buffer(ctx, response_buffer, response_size);
     response_buffer = NULL;
-
-
-/*
-    int sent = BIO_write(bio, ctx->buffer, ctx->index - ctx->buffer);
-    if(sent != ctx->index - ctx->buffer)
-    {
-        kmip_free_buffer(ctx, encoding, buffer_total_size);
-        encoding = NULL;
-        return(KMIP_IO_FAILURE);
-    }
-    
-    kmip_free_buffer(ctx, encoding, buffer_total_size);
-    encoding = NULL;
-
-    // Step 4: Decode response 
-    char *response_buffer = NULL;
-    int response_size = 0;
-    kmip_set_buffer(ctx, response_buffer, response_size);
-    
-    ResponseMessage response_message = {0};
-    int decode_result = kmip_decode_response_message(ctx, &response_message);
-    
-    if(decode_result != KMIP_OK)
-    {
-        kmip_push_error_frame(ctx, __func__, __LINE__);
-        ctx->free_func(ctx->state, response_buffer);
-        return(decode_result);
-    }
-    
-    // Step 5: Check operation status
-    ResponseBatchItem response_item = response_message.batch_items[0];
-    enum result_status resultstatus = response_item.result_status;
-    
-    if(resultstatus != KMIP_STATUS_SUCCESS)
-    {
-        kmip_push_error_frame(ctx, __func__, __LINE__);
-        ctx->free_func(ctx->state, response_buffer);
-        kmip_free_response_message(ctx, &response_message);
-        
-//        // Return specific error based on status
-//        switch(resultstatus)
-//        {
-//            case KMIP_STATUS_OPERATION_FAILED:
-//                return(KMIP_ERROR_OPERATION_FAILED);
-//            case KMIP_STATUS_OPERATION_PENDING:
-//                return(KMIP_ERROR_OPERATION_PENDING);
-//            case KMIP_STATUS_OPERATION_UNDONE:
-//                return(KMIP_ERROR_OPERATION_UNDONE);
-//            default:
-//                return(KMIP_ERROR_OPERATION_FAILED);
-//        }
- 
-        return(resultstatus);
-    }
-   
-    // Step 6: Extract ciphertext and IV from response
-    EncryptResponsePayload *encrypt_response = 
-        (EncryptResponsePayload *)response_item.response_payload;
-    
-    if(encrypt_response == NULL || encrypt_response->data == NULL)
-    {
-        kmip_push_error_frame(ctx, __func__, __LINE__);
-        ctx->free_func(ctx->state, response_buffer);
-        kmip_free_response_message(ctx, &response_message);
-        return(KMIP_INVALID_FIELD);
-    }
-    
-    // Copy ciphertext to output
-    *ciphertext_size = encrypt_response->data->size;
-    *ciphertext = ctx->calloc_func(ctx->state, 1, *ciphertext_size);
-    if(*ciphertext == NULL)
-    {
-        kmip_push_error_frame(ctx, __func__, __LINE__);
-        ctx->free_func(ctx->state, response_buffer);
-        kmip_free_response_message(ctx, &response_message);
-        return(KMIP_MEMORY_ALLOC_FAILED);
-    }
-    kmip_memcpy(ctx, *ciphertext, encrypt_response->data->value, *ciphertext_size);
-    
-    // Copy IV if present and requested
-    if(iv != NULL && iv_size != NULL && 
-       encrypt_response->iv_counter_nonce != NULL)
-    {
-        *iv_size = encrypt_response->iv_counter_nonce->size;
-        *iv = ctx->calloc_func(ctx->state, 1, *iv_size);
-        if(*iv == NULL)
-        {
-            kmip_push_error_frame(ctx, __func__, __LINE__);
-            ctx->free_func(ctx->state, *ciphertext);
-            *ciphertext = NULL;
-            ctx->free_func(ctx->state, response_buffer);
-            kmip_free_response_message(ctx, &response_message);
-            return(KMIP_MEMORY_ALLOC_FAILED);
-        }
-        kmip_memcpy(ctx, *iv, encrypt_response->iv_counter_nonce->value, *iv_size);
-    }
-    
-    // Step 7: Cleanup
-    ctx->free_func(ctx->state, response_buffer);
-    kmip_free_response_message(ctx, &response_message);
- */   
+    kmip_set_buffer(ctx, NULL, 0);
+  
     return(KMIP_OK);
 }
 
@@ -2140,8 +2092,6 @@ kmip_bio_decrypt_with_context(
     
     /* Reset context for new operation */
     kmip_reset(ctx);
-//    ctx->credential_list = NULL;
-//    ctx->credential_count = 0;
 
    /* Set up the initial encoding buffer. */
     size_t buffer_blocks = 1;
@@ -2168,28 +2118,46 @@ kmip_bio_decrypt_with_context(
     
     /* Build Decrypt Request Payload */
     TextString unique_id = {0};
-    unique_id.value = key_uuid;
-    unique_id.size = key_uuid_size;
     
     ByteString data = {0};
     data.value = ciphertext;
     data.size = ciphertext_size;
     
     ByteString iv_data = {0};
+
+    DecryptRequestPayload decrypt_payload = {0};
+    decrypt_payload.unique_identifier = NULL;
+    decrypt_payload.cryptographic_parameters = NULL;
+    decrypt_payload.data = &data;
+    decrypt_payload.iv_counter_nonce = NULL;
+    decrypt_payload.correlation_value = NULL; /* TODO how to implement this? */
+    decrypt_payload.init_indicator = KMIP_UNSET; /* TODO how to implement this? */
+    decrypt_payload.final_indicator = KMIP_UNSET; /* TODO how to implement this? */
+    decrypt_payload.authenticated_encryption_additional_data = NULL; /* TODO how to implement this? */
+    decrypt_payload.authenticated_encryption_tag = NULL; /* TODO how to implement this? */
+
+    // Set unique identifier
+    if(key_uuid != NULL)
+    {
+        unique_id.value = key_uuid;
+        unique_id.size = key_uuid_size;
+        decrypt_payload.unique_identifier = &unique_id;
+    }
+
+    // Set crypto parameters
+    if(params != NULL)
+    {
+        decrypt_payload.cryptographic_parameters = params;
+    }
+
+    // Set IV parameters
     if(iv != NULL && iv_size > 0)
     {
         iv_data.value = iv;
         iv_data.size = iv_size;
-    }
-    
-    DecryptRequestPayload decrypt_payload = {0};
-    decrypt_payload.unique_identifier = &unique_id;
-    decrypt_payload.data = &data;
-    if(iv != NULL && iv_size > 0)
-    {
         decrypt_payload.iv_counter_nonce = &iv_data;
     }
-    decrypt_payload.cryptographic_parameters = params;
+
     
     /* Build Batch Item */
     RequestBatchItem batch_item = {0};
@@ -2202,62 +2170,98 @@ kmip_bio_decrypt_with_context(
     request_message.request_header = &request_header;
     request_message.batch_items = &batch_item;
     request_message.batch_count = 1;
+
+    // Add the context credential to the request message if it exists.
+    // TODO (ph) Update this to add multiple credentials.
+    Authentication auth = {0};
+    if(ctx->credential_list != NULL)
+    {
+        LinkedListItem *item = ctx->credential_list->head;
+        if(item != NULL)
+        {
+            auth.credential = (Credential *)item->data;
+            request_header.authentication = &auth;
+        }
+    }
     
     /* Step 2: Encode request */
-    int result = kmip_encode_request_message(ctx, &request_message);
-    if(result != KMIP_OK)
+    int encode_result = kmip_encode_request_message(ctx, &request_message);
+
+    if(encode_result != KMIP_OK)
     {
+        kmip_free_buffer(ctx, encoding, buffer_total_size);
+        encoding = NULL;
+        kmip_set_buffer(ctx, NULL, 0);
         kmip_push_error_frame(ctx, __func__, __LINE__);
-        return(result);
+        return(encode_result);
     }
+
+    kmip_print_request_message(stdout, &request_message);
+    printf("\n");
     
     /* Step 3: Send request and receive response */
     char *response_buffer = NULL;
     int response_size = 0;
     
-    result = kmip_bio_send_request_encoding(
-        ctx,
-        bio,
-        (char*)encoding,
-        ctx->index - ctx->buffer,
-        &response_buffer,
-        &response_size);
+    int send_result = kmip_bio_send_request_encoding(ctx, bio, (char*)encoding, ctx->index - ctx->buffer, &response_buffer, &response_size);
     
-    if(result != KMIP_OK)
+    if(send_result < 0)
     {
+        kmip_push_error_frame(ctx, __func__, __LINE__);
         kmip_free_buffer(ctx, encoding, buffer_total_size);
         kmip_free_buffer(ctx, response_buffer, response_size);
         encoding = NULL;
         response_buffer = NULL;
         kmip_set_buffer(ctx, NULL, 0);
-        return(result);
+        return(send_result);
     }
 
     kmip_free_buffer(ctx, encoding, buffer_total_size);
     encoding = NULL;
     
-    /* Step 4: Decode response */
+    // Step 4: Decode the response message and retrieve the operation results.
     kmip_set_buffer(ctx, response_buffer, response_size);
-    
     ResponseMessage response_message = {0};
-    result = kmip_decode_response_message(ctx, &response_message);
+    int decode_result = kmip_decode_response_message(ctx, &response_message);
     
-    if(result != KMIP_OK)
+    if(decode_result != KMIP_OK)
     {
         kmip_push_error_frame(ctx, __func__, __LINE__);
-        ctx->free_func(ctx->state, response_buffer);
-        return(result);
+        kmip_free_response_message(ctx, &response_message);
+        kmip_free_buffer(ctx, response_buffer, response_size);
+        response_buffer = NULL;
+        kmip_set_buffer(ctx, NULL, 0);
+        return(decode_result);
+    }
+
+    kmip_print_response_message(stdout, &response_message);
+    printf("\n");
+
+    if(response_message.batch_count != 1 || response_message.batch_items == NULL)
+    {
+        kmip_push_error_frame(ctx, __func__, __LINE__);
+        kmip_free_response_message(ctx, &response_message);
+        kmip_free_buffer(ctx, response_buffer, response_size);
+        response_buffer = NULL;
+        kmip_set_buffer(ctx, NULL, 0);
+        return(KMIP_MALFORMED_RESPONSE);
     }
     
     /* Step 5: Check operation status */
     ResponseBatchItem response_item = response_message.batch_items[0];
     enum result_status resultstatus = response_item.result_status;
-    
+
+    kmip_set_last_result(&response_item);
+
     if(resultstatus != KMIP_STATUS_SUCCESS)
     {
         kmip_push_error_frame(ctx, __func__, __LINE__);
-        ctx->free_func(ctx->state, response_buffer);
         kmip_free_response_message(ctx, &response_message);
+        kmip_free_buffer(ctx, response_buffer, response_size);
+        response_buffer = NULL;
+        kmip_set_buffer(ctx, NULL, 0);
+
+        // TODO (fst) handle special responses
 /*        
         // Return specific error based on status 
         switch(resultstatus)
@@ -2272,6 +2276,7 @@ kmip_bio_decrypt_with_context(
                 return(KMIP_ERROR_OPERATION_FAILED);
         }
 */
+        // TODO (fst) handle response correct
         return(resultstatus);
     }
     
@@ -2281,26 +2286,33 @@ kmip_bio_decrypt_with_context(
     if(decrypt_response == NULL || decrypt_response->data == NULL)
     {
         kmip_push_error_frame(ctx, __func__, __LINE__);
-        ctx->free_func(ctx->state, response_buffer);
         kmip_free_response_message(ctx, &response_message);
+        kmip_free_buffer(ctx, response_buffer, response_size);
+        response_buffer = NULL;
+        kmip_set_buffer(ctx, NULL, 0);
         return(KMIP_INVALID_FIELD);
     }
-    
+
     /* Copy plaintext to output */
     *plaintext_size = decrypt_response->data->size;
     *plaintext = ctx->calloc_func(ctx->state, 1, *plaintext_size);
+
     if(*plaintext == NULL)
     {
         kmip_push_error_frame(ctx, __func__, __LINE__);
-        ctx->free_func(ctx->state, response_buffer);
         kmip_free_response_message(ctx, &response_message);
+        kmip_free_buffer(ctx, response_buffer, response_size);
+        response_buffer = NULL;
+        kmip_set_buffer(ctx, NULL, 0);
         return(KMIP_MEMORY_ALLOC_FAILED);
     }
     kmip_memcpy(ctx, *plaintext, decrypt_response->data->value, *plaintext_size);
     
     /* Step 7: Cleanup */
-    ctx->free_func(ctx->state, response_buffer);
     kmip_free_response_message(ctx, &response_message);
+    kmip_free_buffer(ctx, response_buffer, response_size);
+    response_buffer = NULL;
+    kmip_set_buffer(ctx, NULL, 0);
     
     return(KMIP_OK);
 }

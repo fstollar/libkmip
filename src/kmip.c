@@ -1937,6 +1937,11 @@ kmip_free_text_string(KMIP *ctx, TextString *value)
 void
 kmip_free_byte_string(KMIP *ctx, ByteString *value)
 {
+    if(ctx == NULL)
+    {
+        return;
+    }
+
     if(value != NULL)
     {
         if(value->value != NULL)
@@ -1956,6 +1961,11 @@ kmip_free_byte_string(KMIP *ctx, ByteString *value)
 void
 kmip_free_name(KMIP *ctx, Name *value)
 {
+    if(ctx == NULL)
+    {
+        return;
+    }
+
     if(value != NULL)
     {
         if(value->value != NULL)
@@ -1975,6 +1985,11 @@ kmip_free_name(KMIP *ctx, Name *value)
 void
 kmip_free_protection_storage_masks(KMIP *ctx, ProtectionStorageMasks *value)
 {
+    if(ctx == NULL)
+    {
+        return;
+    }
+
     if(value != NULL)
     {
         if(value->masks != NULL)
@@ -1998,6 +2013,11 @@ kmip_free_protection_storage_masks(KMIP *ctx, ProtectionStorageMasks *value)
 void
 kmip_free_attribute(KMIP *ctx, Attribute *value)
 {
+    if(ctx == NULL)
+    {
+        return;
+    }
+
     if(value != NULL)
     {
         if(value->value != NULL)
@@ -11177,7 +11197,6 @@ kmip_decode_response_batch_item(KMIP *ctx, ResponseBatchItem *value)
             case KMIP_OP_GET:
             value->response_payload = ctx->calloc_func(ctx->state, 1, sizeof(GetResponsePayload));
             CHECK_NEW_MEMORY(ctx, value->response_payload, sizeof(GetResponsePayload), "GetResponsePayload structure");
-            
             result = kmip_decode_get_response_payload(ctx, value->response_payload);
             break;
             
@@ -11715,6 +11734,7 @@ kmip_decode_request_message(KMIP *ctx, RequestMessage *value)
     value->request_header = ctx->calloc_func(ctx->state, 1, sizeof(RequestHeader));
     CHECK_NEW_MEMORY(ctx, value->request_header, sizeof(RequestHeader), "RequestHeader structure");
     kmip_init_request_header(value->request_header);
+
     result = kmip_decode_request_header(ctx, value->request_header);
     CHECK_RESULT(ctx, result);
     
@@ -11930,7 +11950,7 @@ kmip_decode_server_information(KMIP *ctx, ServerInformation *value)
     kmip_decode_int32_be(ctx, &tag_type);
     CHECK_TAG_TYPE(ctx, tag_type, KMIP_TAG_SERVER_INFORMATION, KMIP_TYPE_STRUCTURE);
 
-    kmip_decode_int32_be(ctx, &length);
+    kmip_decode_length(ctx, &length);
     CHECK_BUFFER_FULL(ctx, length);
 
     if(kmip_is_tag_next(ctx, KMIP_TAG_SERVER_NAME))
@@ -12021,6 +12041,7 @@ int
 kmip_decode_query_response_payload(KMIP *ctx, QueryResponsePayload *value)
 {
     CHECK_DECODE_ARGS(ctx, value);
+    CHECK_BUFFER_FULL(ctx, 8);
     int result = 0;
 
     int32 tag_type = 0;
@@ -12029,7 +12050,7 @@ kmip_decode_query_response_payload(KMIP *ctx, QueryResponsePayload *value)
     kmip_decode_int32_be(ctx, &tag_type);
     CHECK_TAG_TYPE(ctx, tag_type, KMIP_TAG_RESPONSE_PAYLOAD, KMIP_TYPE_STRUCTURE);
 
-    kmip_decode_int32_be(ctx, &length);
+    kmip_decode_length(ctx, &length);
     CHECK_BUFFER_FULL(ctx, length);
 
     if(kmip_is_tag_next(ctx, KMIP_TAG_OPERATION))
@@ -12088,12 +12109,12 @@ kmip_decode_activate_response_payload(KMIP *ctx, ActivateResponsePayload *value)
     CHECK_TAG_TYPE(ctx, tag_type, KMIP_TAG_RESPONSE_PAYLOAD, KMIP_TYPE_STRUCTURE);
     
     /* Read length */
-    result = kmip_decode_int32_be(ctx, &length);
-    CHECK_RESULT(ctx, result);
+    result = kmip_decode_length(ctx, &length);
     CHECK_BUFFER_FULL(ctx, length);
     
     /* Allocate memory for mandatory fields */
     value->unique_identifier = ctx->calloc_func(ctx->state, 1, sizeof(TextString));
+    CHECK_NEW_MEMORY(ctx, value->unique_identifier, sizeof(TextString), "Unique Identifier as TextString");
 
     /* Track position */
     uint8 *value_index = ctx->index;
@@ -12150,6 +12171,7 @@ kmip_decode_encrypt_response_payload(KMIP *ctx, EncryptResponsePayload *value)
     
     /* Allocate memory for mandatory fields */
     value->unique_identifier = ctx->calloc_func(ctx->state, 1, sizeof(TextString));
+    CHECK_NEW_MEMORY(ctx, value->unique_identifier, sizeof(TextString), "Unique Identifier as TextString");
     
     /* Optional fields start as NULL */
     value->data = NULL;
@@ -12177,6 +12199,7 @@ kmip_decode_encrypt_response_payload(KMIP *ctx, EncryptResponsePayload *value)
                 if(value->data == NULL)
                 {
                     value->data = ctx->calloc_func(ctx->state, 1, sizeof(ByteString));
+                    CHECK_NEW_MEMORY(ctx, value->data, sizeof(ByteString), "Data Ciphertext as ByteString");
                 }
                 result = kmip_decode_byte_string(ctx, KMIP_TAG_DATA, value->data);
                 CHECK_RESULT(ctx, result);
@@ -12187,6 +12210,7 @@ kmip_decode_encrypt_response_payload(KMIP *ctx, EncryptResponsePayload *value)
                 if(value->iv_counter_nonce == NULL)
                 {
                     value->iv_counter_nonce = ctx->calloc_func(ctx->state, 1, sizeof(ByteString));
+                    CHECK_NEW_MEMORY(ctx, value->iv_counter_nonce, sizeof(ByteString), "IV_Counter_Nonce as ByteString");
                 }
                 result = kmip_decode_byte_string(ctx, KMIP_TAG_IV_COUNTER_NONCE, value->iv_counter_nonce);
                 CHECK_RESULT(ctx, result);
@@ -12197,6 +12221,7 @@ kmip_decode_encrypt_response_payload(KMIP *ctx, EncryptResponsePayload *value)
                 if(value->correlation_value == NULL)
                 {
                     value->correlation_value = ctx->calloc_func(ctx->state, 1, sizeof(TextString));
+                    CHECK_NEW_MEMORY(ctx, value->correlation_value, sizeof(TextString), "Correlation Value as TextString");
                 }
                 result = kmip_decode_text_string(ctx, KMIP_TAG_CORRELATION_VALUE, value->correlation_value);
                 CHECK_RESULT(ctx, result);
@@ -12206,6 +12231,7 @@ kmip_decode_encrypt_response_payload(KMIP *ctx, EncryptResponsePayload *value)
                 if(value->authenticated_encryption_tag == NULL)
                 {
                     value->authenticated_encryption_tag = ctx->calloc_func(ctx->state, 1, sizeof(ByteString));
+                    CHECK_NEW_MEMORY(ctx, value->authenticated_encryption_tag, sizeof(ByteString), "authenticated_encryption_tag as ByteString");
                 }
                 result = kmip_decode_byte_string(ctx, KMIP_TAG_AUTHENTICATED_ENCRYPTION_TAG, value->authenticated_encryption_tag);
                 CHECK_RESULT(ctx, result);
@@ -12250,6 +12276,7 @@ kmip_decode_decrypt_response_payload(KMIP *ctx, DecryptResponsePayload *value)
     
     /* Allocate memory for mandatory fields */
     value->unique_identifier = ctx->calloc_func(ctx->state, 1, sizeof(TextString));
+    CHECK_NEW_MEMORY(ctx, value->unique_identifier, sizeof(TextString), "Unique Identifier as TextString");
     
     /* Optional fields start as NULL */
     value->data = NULL;
@@ -12275,6 +12302,7 @@ kmip_decode_decrypt_response_payload(KMIP *ctx, DecryptResponsePayload *value)
                 if(value->data == NULL)
                 {
                     value->data = ctx->calloc_func(ctx->state, 1, sizeof(ByteString));
+                    CHECK_NEW_MEMORY(ctx, value->data, sizeof(ByteString), "Data Plaintext as ByteString");
                 }
                 result = kmip_decode_byte_string(ctx, KMIP_TAG_DATA, value->data);
                 CHECK_RESULT(ctx, result);
@@ -12285,6 +12313,7 @@ kmip_decode_decrypt_response_payload(KMIP *ctx, DecryptResponsePayload *value)
                 if(value->correlation_value == NULL)
                 {
                     value->correlation_value = ctx->calloc_func(ctx->state, 1, sizeof(TextString));
+                    CHECK_NEW_MEMORY(ctx, value->correlation_value, sizeof(TextString), "Correlation Value as TextString");
                 }
                 result = kmip_decode_text_string(ctx, KMIP_TAG_CORRELATION_VALUE, value->correlation_value);
                 CHECK_RESULT(ctx, result);

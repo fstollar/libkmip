@@ -152,8 +152,8 @@ use_low_level_api(const char *server_address,
     kmip_set_buffer(&kmip_context, encoding, buffer_total_size);
     
     /* Build the request message. */
-    Attribute a[3] = {0};
-    for(int i = 0; i < 3; i++)
+    Attribute a[4] = {0};
+    for(int i = 0; i < 4; i++)
         kmip_init_attribute(&a[i]);
     
     enum cryptographic_algorithm algorithm = KMIP_CRYPTOALG_AES;
@@ -168,13 +168,14 @@ use_low_level_api(const char *server_address,
     a[2].type = KMIP_ATTR_CRYPTOGRAPHIC_USAGE_MASK;
     a[2].value = &mask;
 
-//    int64 datetime = time(NULL) -1;
-//    a[3].type = KMIP_ATTR_ACTIVATION_DATE;
-//    a[3].value = &datetime;
+    // TODO (fst) pyKMIP server does not support Activation-Date attribute to active the key at creation time
+    int64 datetime = time(NULL) - 60;
+    a[3].type = KMIP_ATTR_ACTIVATION_DATE;
+    a[3].value = &datetime;
     
     TemplateAttribute ta = {0};
     ta.attributes = a;
-    ta.attribute_count = ARRAY_LENGTH(a);
+    ta.attribute_count = 3; //ARRAY_LENGTH(a);
     
     ProtocolVersion pv = {0};
     kmip_init_protocol_version(&pv, kmip_context.version);

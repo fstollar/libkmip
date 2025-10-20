@@ -259,8 +259,8 @@ main(int argc, char **argv)
     
     result = kmip_bio_decrypt_with_context(
         &ctx, bio,
-        (char *)key_id,
-        strlen(key_id),
+        key_id,
+        key_length,
         ciphertext,
         ciphertext_size,
         iv,
@@ -271,11 +271,11 @@ main(int argc, char **argv)
     
     if(result != KMIP_OK)
     {
-        fprintf(stderr, "Decryption failed with error code: %d\n", result);
-        kmip_print_error_string(stderr, result);
+        fprintf(stderr, "Decryption failed with error code: %d (", result);
+        kmip_print_error_string(stderr, result); fprintf(stderr, ")\n");
+        if(ciphertext != NULL) ctx.free_func(ctx.state, ciphertext);
+        if(iv != NULL) ctx.free_func(ctx.state, iv);
         kmip_destroy(&ctx);
-        free(ciphertext);
-        free(iv);
         BIO_free_all(bio);
         return(1);
     }
@@ -301,10 +301,11 @@ main(int argc, char **argv)
     }
     
     /* Cleanup */
+
+    if(ciphertext != NULL) ctx.free_func(ctx.state, ciphertext);
+    if(iv != NULL) ctx.free_func(ctx.state, iv);
+    if(decrypted != NULL) ctx.free_func(ctx.state, decrypted);
     kmip_destroy(&ctx);
-    free(ciphertext);
-    free(iv);
-    free(decrypted);
     BIO_free_all(bio);
     
     printf("\n=== Demo Complete ===\n\n");
