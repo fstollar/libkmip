@@ -79,6 +79,6 @@ jobs:
           demos/demo_create -a localhost -c pykmip-test-server/snakeoil.crt -k pykmip-test-server/snakeoil.key -p 5696 -r pykmip-test-server/snakeoil.crt &> create.log
           id="$(awk '/Symmetric Key ID:/ { print $4 }' create.log)"
 
-          kill %1
+          pkill uv
           jobs
           wait
