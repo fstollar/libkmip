@@ -1667,7 +1667,7 @@ int kmip_bio_active_with_context(KMIP *ctx, BIO *bio, char* key_uuid)
     if(key_uuid != NULL)
     {
         unique_id.value = key_uuid;
-        unique_id.size = kmip_strnlen_s(key_uuid,32);
+        unique_id.size = kmip_strnlen_s(key_uuid, 36);
         activate_payload.unique_identifier = &unique_id;
     }
 

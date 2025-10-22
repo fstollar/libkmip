@@ -1,13 +1,13 @@
 /*
  * demo_encrypt.c - Demonstration of KMIP Encrypt/Decrypt operations
- * 
+ *
  * This demo shows how to use the libkmip encrypt/decrypt API to:
  * 1. Connect to a KMIP server
  * 2. Encrypt plaintext data
  * 3. Decrypt the ciphertext back to plaintext
- * 
+ *
  * Build: gcc -o demo_encrypt demo_encrypt.c -lkmip -lssl -lcrypto
- * Usage: ./demo_encrypt <server> <port> <cert> <key> <ca> <key_id>
+ * Usage: ./demo_encrypt <server> <port> <cert> <key> <ca> <<key_id>>
  */
 
 #include <stdio.h>
@@ -44,12 +44,12 @@ connect_to_kmip_server(
 {
     SSL_CTX *ssl_ctx = NULL;
     BIO *bio = NULL;
-    
+
     /* Initialize OpenSSL */
     SSL_library_init();
     SSL_load_error_strings();
     OpenSSL_add_all_algorithms();
-    
+
     /* Create SSL context */
     ssl_ctx = SSL_CTX_new(TLS_client_method());
     if(ssl_ctx == NULL)
@@ -58,7 +58,7 @@ connect_to_kmip_server(
         ERR_print_errors_fp(stderr);
         return(NULL);
     }
-    
+
     /* Load client certificate */
     if(SSL_CTX_use_certificate_file(ssl_ctx, cert_path, SSL_FILETYPE_PEM) != 1)
     {
@@ -67,7 +67,7 @@ connect_to_kmip_server(
         SSL_CTX_free(ssl_ctx);
         return(NULL);
     }
-    
+
     /* Load client private key */
     if(SSL_CTX_use_PrivateKey_file(ssl_ctx, key_path, SSL_FILETYPE_PEM) != 1)
     {
@@ -76,7 +76,7 @@ connect_to_kmip_server(
         SSL_CTX_free(ssl_ctx);
         return(NULL);
     }
-    
+
     /* Verify private key */
     if(SSL_CTX_check_private_key(ssl_ctx) != 1)
     {
@@ -85,7 +85,7 @@ connect_to_kmip_server(
         SSL_CTX_free(ssl_ctx);
         return(NULL);
     }
-    
+
     /* Load CA certificate for server verification */
     if(SSL_CTX_load_verify_locations(ssl_ctx, ca_path, NULL) != 1)
     {
@@ -94,10 +94,10 @@ connect_to_kmip_server(
         SSL_CTX_free(ssl_ctx);
         return(NULL);
     }
-    
+
     /* Require server certificate verification */
     SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, NULL);
-    
+
     /* Create BIO for connection */
     bio = BIO_new_ssl_connect(ssl_ctx);
     if(bio == NULL)
@@ -107,12 +107,12 @@ connect_to_kmip_server(
         SSL_CTX_free(ssl_ctx);
         return(NULL);
     }
-    
+
     /* Set connection hostname and port */
     char address[256];
     snprintf(address, sizeof(address), "%s:%s", server, port);
     BIO_set_conn_hostname(bio, address);
-    
+
     /* Connect */
     if(BIO_do_connect(bio) <= 0)
     {
@@ -122,7 +122,7 @@ connect_to_kmip_server(
         SSL_CTX_free(ssl_ctx);
         return(NULL);
     }
-    
+
     /* Verify server certificate */
     SSL *ssl;
     BIO_get_ssl(bio, &ssl);
@@ -133,7 +133,7 @@ connect_to_kmip_server(
         SSL_CTX_free(ssl_ctx);
         return(NULL);
     }
-    
+
     printf("Connected to KMIP server at %s\n", address);
     return(bio);
 }
@@ -154,7 +154,7 @@ main(int argc, char **argv)
         fprintf(stderr, "  key_id  - (optional) Unique identifier of encryption key\n");
         return(1);
     }
-    
+
     const char *server = argv[1];
     const char *port = argv[2];
     const char *cert_path = argv[3];
@@ -165,18 +165,18 @@ main(int argc, char **argv)
     if (argc == 7)
     {
         key_id = argv[6];
-        key_length = kmip_strnlen_s(key_id, 32);
+        key_length = kmip_strnlen_s(key_id, 36);
     }
 
-    
+
     /* Test data */
     const char *plaintext_str = "Hello, KMIP! This is a test message for encryption.";
     uint8 *plaintext = (uint8 *)plaintext_str;
     int plaintext_size = strlen(plaintext_str);
-    
+
     printf("\n=== KMIP Encrypt/Decrypt Demo ===\n\n");
     print_hex("Original plaintext", plaintext, plaintext_size);
-    
+
     /* Connect to KMIP server */
     BIO *bio = connect_to_kmip_server(server, port, cert_path, key_path, ca_path);
     if(bio == NULL)
@@ -189,23 +189,7 @@ main(int argc, char **argv)
     KMIP ctx = {0};
     kmip_init(&ctx, NULL, 0, KMIP_1_2);
     int result = 0;
-/*
-    // activate key
-    result = kmip_bio_active_with_context( &ctx, bio, key_id);
 
-    if(result != KMIP_OK)
-    {
-        fprintf(stderr, "Key activation failed with error code: %d (", result);
-        kmip_print_error_string(stderr, result); fprintf(stderr, ")\n");
-        kmip_destroy(&ctx);
-        BIO_free_all(bio);
-        return(1);
-    }
-    else
-    {
-        printf("Key Activation successful!\n");
-    }
-*/
     /* Set up cryptographic parameters */
     CryptographicParameters params = {0};
     kmip_init_cryptographic_parameters(&params);
@@ -214,19 +198,19 @@ main(int argc, char **argv)
     params.padding_method = KMIP_PAD_PKCS5;
 //    params.hashing_algorithm = KMIP_HASH_SHA3_256;
     params.random_iv = KMIP_TRUE;  /* Request server to generate IV */
-    
+
     printf("\nCryptographic parameters:\n");
     printf("  Block cipher mode: CBC\n");
     printf("  Padding method: PKCS5\n");
     printf("  Random IV: True (server-generated)\n");
-    
+
     /* Encrypt the data */
     printf("\n--- Encryption Phase ---\n");
     uint8 *ciphertext = NULL;
     int ciphertext_size = 0;
     uint8 *iv = NULL;
     int iv_size = 0;
-    
+
     result = kmip_bio_encrypt_with_context(
         &ctx, bio,
         key_id,
@@ -238,7 +222,7 @@ main(int argc, char **argv)
         &ciphertext_size,
         &iv,
         &iv_size);
-    
+
     if(result != KMIP_OK)
     {
         fprintf(stderr, "Encryption failed with error code: %d (", result);
@@ -247,16 +231,16 @@ main(int argc, char **argv)
         BIO_free_all(bio);
         return(1);
     }
-    
+
     printf("Encryption successful!\n");
     print_hex("Ciphertext", ciphertext, ciphertext_size);
     print_hex("IV", iv, iv_size);
-    
+
     /* Decrypt the data */
     printf("\n--- Decryption Phase ---\n");
     uint8 *decrypted = NULL;
     int decrypted_size = 0;
-    
+
     result = kmip_bio_decrypt_with_context(
         &ctx, bio,
         key_id,
@@ -268,7 +252,7 @@ main(int argc, char **argv)
         &params,
         &decrypted,
         &decrypted_size);
-    
+
     if(result != KMIP_OK)
     {
         fprintf(stderr, "Decryption failed with error code: %d (", result);
@@ -279,10 +263,10 @@ main(int argc, char **argv)
         BIO_free_all(bio);
         return(1);
     }
-    
+
     printf("Decryption successful!\n");
     print_hex("Decrypted plaintext", decrypted, decrypted_size);
-    
+
     /* Verify roundtrip */
     printf("\n--- Verification ---\n");
     if(decrypted_size == plaintext_size &&
@@ -299,7 +283,7 @@ main(int argc, char **argv)
         printf("✗ FAILURE: Decrypted data does not match!\n");
         printf("  Expected %d bytes, got %d bytes\n", plaintext_size, decrypted_size);
     }
-    
+
     /* Cleanup */
 
     if(ciphertext != NULL) ctx.free_func(ctx.state, ciphertext);
@@ -307,37 +291,37 @@ main(int argc, char **argv)
     if(decrypted != NULL) ctx.free_func(ctx.state, decrypted);
     kmip_destroy(&ctx);
     BIO_free_all(bio);
-    
+
     printf("\n=== Demo Complete ===\n\n");
     return(0);
 }
 
 /*
  * Example output:
- * 
+ *
  * === KMIP Encrypt/Decrypt Demo ===
- * 
+ *
  * Original plaintext (52 bytes): 48656C6C6F2C204B4D495021205468697320697320612074657374206D657373616765...
  * Connected to KMIP server at localhost:5696
- * 
+ *
  * Cryptographic parameters:
  *   Block cipher mode: CBC
  *   Padding method: PKCS5
  *   Random IV: True (server-generated)
- * 
+ *
  * --- Encryption Phase ---
  * Encryption successful!
  * Ciphertext (64 bytes): 8A3F2E91C45B7D2A6F8E3C1D9B4A7E2C5F1D8A3E6B9C2F5A1D8E4B7C3A9F2E5D...
  * IV (16 bytes): 1A2B3C4D5E6F7A8B9C0D1E2F3A4B5C6D
- * 
+ *
  * --- Decryption Phase ---
  * Decryption successful!
  * Decrypted plaintext (52 bytes): 48656C6C6F2C204B4D495021205468697320697320612074657374206D657373616765...
- * 
+ *
  * --- Verification ---
  * ✓ SUCCESS: Decrypted data matches original plaintext!
  *   Original:  "Hello, KMIP! This is a test message for encryption."
  *   Decrypted: "Hello, KMIP! This is a test message for encryption."
- * 
+ *
  * === Demo Complete ===
  */
