@@ -813,7 +813,7 @@ typedef struct linked_list_item
 {
     struct linked_list_item *next;
     struct linked_list_item *prev;
-    
+
     void *data;
 } LinkedListItem;
 
@@ -849,12 +849,12 @@ typedef struct kmip
     uint8 *buffer;
     uint8 *index;
     size_t size;
-    
+
     /* KMIP message settings */
     enum kmip_version version;
     int max_message_size;
     LinkedList *credential_list;
-    
+
     /* Error handling information */
     char *error_message;
     size_t error_message_size;
@@ -862,7 +862,7 @@ typedef struct kmip
     ErrorFrame errors[20];
     size_t error_frame_count;
     struct error_frame *frame_index;
-    
+
     /* Memory management function pointers */
     void *(*calloc_func)(void *state, size_t num, size_t size);
     void *(*realloc_func)(void *state, void *ptr, size_t size);
@@ -1293,10 +1293,10 @@ typedef struct query_response
 
 /*
  * Encrypt Request Payload
- * 
+ *
  * Required fields:
  *   - data: The plaintext to encrypt (not required for multi-part)
- * 
+ *
  * Optional fields:
  *   - unique_identifier: Key ID (if NULL, server uses default key)
  *   - cryptographic_parameters: Encryption settings (if NULL, server uses key defaults)
@@ -1320,7 +1320,7 @@ typedef struct encrypt_request_payload
 
 /*
  * Encrypt Response Payload
- * 
+ *
  * Required fields:
  *   - unique_identifier: Key ID that was used
  *
@@ -1342,12 +1342,12 @@ typedef struct encrypt_response_payload
 
 /*
  * Decrypt Request Payload
- * 
+ *
  * This is what the client sends to the server to request decryption.
- * 
+ *
  * Required fields:
  *   - data: The ciphertext to decrypt (not required for multi-part)
- * 
+ *
  * Optional fields:
  *   - unique_identifier: Key ID (if NULL, server may try to determine from ciphertext)
  *   - cryptographic_parameters: Decryption settings
@@ -1373,12 +1373,12 @@ typedef struct decrypt_request_payload
 
 /*
  * Decrypt Response Payload
- * 
+ *
  * This is what the server returns after decrypting data.
  *
  * Required fields:
  *   - unique_identifier: Key ID that was used
- * 
+ *
  * Optional fields:
  *   - data: The resulting plaintext
  *   - correlation_value:
@@ -1788,11 +1788,9 @@ int kmip_encode_response_message(KMIP *, const ResponseMessage *);
 int kmip_encode_query_functions(KMIP *ctx, const Functions*);
 int kmip_encode_query_request_payload(KMIP *, const QueryRequestPayload *);
 int kmip_encode_query_response_payload(KMIP *, const QueryResponsePayload *);
-int kmip_encode_activate_request_payload(KMIP *ctx, ActivateRequestPayload *value);
 int kmip_encode_encrypt_request_payload(KMIP *ctx, const EncryptRequestPayload *value);
-//int kmip_encode_encrypt_response_payload(KMIP *ctx, const EncryptRequestPayload *value);
 int kmip_encode_decrypt_request_payload(KMIP *ctx, const DecryptRequestPayload *value);
-//int kmip_encode_decrypt_response_payload(KMIP *ctx, const DecryptRequestPayload *value);
+int kmip_encode_activate_request_payload(KMIP *ctx, ActivateRequestPayload *value);
 
 
 /*
@@ -1860,7 +1858,5 @@ int kmip_decode_server_information(KMIP *ctx, ServerInformation *);
 int kmip_decode_activate_response_payload(KMIP *ctx, ActivateResponsePayload *value);
 int kmip_decode_encrypt_response_payload(KMIP *ctx, EncryptResponsePayload *value);
 int kmip_decode_decrypt_response_payload(KMIP *ctx, DecryptResponsePayload *value);
-
-
 
 #endif  /* KMIP_H */

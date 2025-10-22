@@ -2,9 +2,7 @@
 *.a
 *.lo
 *.so*
-bin/demo_create
-bin/demo_destroy
-bin/demo_query
-bin/demo_get
-bin/demo_encrypt
-bin/tests
+bin/*
+.vscode
+.cache
+compile_commands.json

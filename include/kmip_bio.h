@@ -50,7 +50,6 @@ int kmip_bio_send_request_encoding(KMIP *ctx, BIO *bio, char *request, int reque
  * These functions require the caller to create and manage the KMIP context
  */
 
-
 int kmip_bio_active_with_context(KMIP *ctx, BIO *bio, char* key_uuid);
 
 /**
