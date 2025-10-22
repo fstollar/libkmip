@@ -47,7 +47,7 @@ LOFLAGS = -fPIC
 SOFLAGS = -shared -Wl,-soname,$(SO_NAME)
 SOCOREFLAGS = -shared -Wl,-soname,$(SO_CORE_NAME)
 LDFLAGS = -L/usr/local/lib64 -L/usr/local/lib
-LDLIBS  = -lssl -lcrypto 
+LDLIBS  = -lssl -lcrypto
 
 INC_FLAGS = -I$(INC_DIR)
 
@@ -71,6 +71,7 @@ DEMO_O_FILES += $(OBJ_DIR)/demo_create.o
 DEMO_O_FILES += $(OBJ_DIR)/demo_destroy.o
 DEMO_O_FILES += $(OBJ_DIR)/demo_query.o
 DEMO_O_FILES += $(OBJ_DIR)/demo_encrypt.o
+DEMO_O_FILES += $(OBJ_DIR)/demo_activate.o
 
 TEST_O_FILES = $(OBJ_DIR)/tests.o
 
@@ -88,7 +89,8 @@ demos: objs \
        $(BIN_DIR)/demo_create \
        $(BIN_DIR)/demo_destroy \
        $(BIN_DIR)/demo_query \
-	   $(BIN_DIR)/demo_encrypt
+	   $(BIN_DIR)/demo_encrypt \
+	   $(BIN_DIR)/demo_activate
 
 tests: objs \
        $(TEST_O_FILES) \
@@ -107,6 +109,8 @@ $(BIN_DIR)/demo_destroy: $(OBJ_DIR)/demo_destroy.o $(SRC_O_FILES)
 $(BIN_DIR)/demo_query: $(OBJ_DIR)/demo_query.o $(SRC_O_FILES)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 $(BIN_DIR)/demo_encrypt: $(OBJ_DIR)/demo_encrypt.o $(SRC_O_FILES)
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+$(BIN_DIR)/demo_activate: $(OBJ_DIR)/demo_activate.o $(SRC_O_FILES)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 $(BIN_DIR)/tests: $(TEST_O_FILES) $(OBJ_DIR)/kmip.o $(OBJ_DIR)/kmip_io.o $(OBJ_DIR)/kmip_memset.o
@@ -131,6 +135,8 @@ $(OBJ_DIR)/demo_destroy.o: $(DEMO_DIR)/demo_destroy.c $(H_FILES)
 $(OBJ_DIR)/demo_query.o: $(DEMO_DIR)/demo_query.c $(H_FILES)
 	$(CC) $(CFLAGS) $(INC_FLAGS) -c $< -o $@
 $(OBJ_DIR)/demo_encrypt.o: $(DEMO_DIR)/demo_encrypt.c $(H_FILES)
+	$(CC) $(CFLAGS) $(INC_FLAGS) -c $< -o $@
+$(OBJ_DIR)/demo_activate.o: $(DEMO_DIR)/demo_activate.c $(H_FILES)
 	$(CC) $(CFLAGS) $(INC_FLAGS) -c $< -o $@
 
 $(OBJ_DIR)/tests.o: $(TEST_DIR)/tests.c $(INC_DIR)/kmip.h $(INC_DIR)/kmip_io.h $(INC_DIR)/kmip_memset.h
