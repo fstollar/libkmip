@@ -162,6 +162,7 @@ main(int argc, char **argv)
         key_id = argv[6];
         key_length = kmip_strnlen_s(key_id, 36);
     }
+    (void) key_length;
 
 
     printf("\n=== KMIP Key Activation Demo ===\n\n");
