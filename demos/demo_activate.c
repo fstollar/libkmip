@@ -3,6 +3,8 @@
  *
  * Build: gcc -o demo_activate demo_activate.c -lkmip -lssl -lcrypto
  * Usage: ./demo_activate <server> <port> <cert> <key> <ca> <<key_id>>
+ *
+ * NOTE: pyKMIP server seems to need the key_id while the KMIP specification defines it as optional
  */
 
 #include <stdio.h>
